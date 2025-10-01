@@ -72,18 +72,19 @@ export function GameCard({ card, view, isFaceUp = true, onClick, onPlayBlind, cl
   if (view === 'player' && isPlayable) {
      return (
         <div 
-            onClick={handleCardClick}
             className={cn(
-                "relative aspect-[2.5/3.5] rounded-lg shadow-lg transition-transform duration-300 cursor-pointer",
+                "relative aspect-[2.5/3.5] rounded-lg shadow-lg transition-transform duration-300",
                 "hover:scale-105 hover:-translate-y-2 ring-4 ring-transparent hover:ring-accent",
                 className
             )}
         >
-            {cardContent()}
+            <div onClick={handleCardClick} className="w-full h-full cursor-pointer">
+              {cardContent()}
+            </div>
              {onPlayBlind && (
                 <button 
                     onClick={handleBlindPlayClick} 
-                    className="absolute top-1 right-1 z-10 p-1 rounded-full bg-black/30 hover:bg-black/50 transition-colors"
+                    className="absolute top-1 right-1 z-10 p-1 rounded-full bg-black/30 hover:bg-black/50 transition-colors cursor-pointer"
                     aria-label="Jugar a ciegas"
                 >
                     <EyeOff className="w-4 h-4 text-white" />

@@ -52,8 +52,8 @@ export function getInitialState(): GameState {
   }
   
   const players: [Player, Player] = [
-    { id: 1, name: 'Jugador 1', hand: player1Hand, discardPile: [] },
-    { id: 2, name: 'Jugador 2', hand: player2Hand, discardPile: [] },
+    { id: '1', name: 'Jugador 1', hand: player1Hand, discardPile: [] },
+    { id: '2', name: 'Jugador 2', hand: player2Hand, discardPile: [] },
   ];
 
   return {
@@ -63,7 +63,6 @@ export function getInitialState(): GameState {
     centerRow: [],
     currentPlayerIndex: Math.random() < 0.5 ? 0 : 1,
     turnState: 'PLAYING',
-    canFlipInitially: true,
     playedCardsThisTurn: 0,
     roundEndReason: null,
     roundWinner: null,
@@ -79,8 +78,6 @@ export function getInitialState(): GameState {
 function checkRowState(centerRow: CenterRowCard[]): { state: RowState; color?: Color } {
   const visibleColors = new Set<Color>();
   for (const card of centerRow) {
-    if (!card.isFaceUp) continue;
-
     const color = card.frontColor;
     if (color === 'Black') {
       return { state: 'BLACK_CARD' };
@@ -136,7 +133,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       
       const newCenterRowCard: CenterRowCard = { 
         ...cardForCenter,
-        isFaceUp: true, // Card is always face up
+        isFaceUp: true,
       };
 
       const logMessage = isBlind 
@@ -148,7 +145,6 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         players: state.players.map((p, i) => i === state.currentPlayerIndex ? { ...p, hand: newHand } : p) as [Player, Player],
         centerRow: [...state.centerRow, newCenterRowCard],
         playedCardsThisTurn: state.playedCardsThisTurn + 1,
-        canFlipInitially: false,
         lastActionLog: logMessage
       };
       
@@ -220,7 +216,6 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         centerRow: newCenterRow,
         currentPlayerIndex: nextPlayerIndex as 0 | 1,
         turnState: 'PLAYING',
-        canFlipInitially: true,
         playedCardsThisTurn: 0,
         roundEndReason: null,
         lastActionLog: `${newPlayers[roundWinnerIndex].name} ganó la ronda. ${newPlayers[nextPlayerIndex].name} empieza.`,
@@ -274,7 +269,6 @@ function endTurn(state: GameState): GameState {
     players: newPlayers,
     currentPlayerIndex: nextPlayerIndex,
     turnState: 'PLAYING',
-    canFlipInitially: true,
     playedCardsThisTurn: 0,
     lastActionLog: state.lastActionLog.includes('tiempo') ? state.lastActionLog : `${state.players[state.currentPlayerIndex].name} terminó su turno. Turno de ${newPlayers[nextPlayerIndex].name}.`,
     turnTimer: TURN_TIME_SECONDS
@@ -309,26 +303,24 @@ function checkGameOver(state: GameState): GameState {
 // --- CUSTOM HOOK ---
 export function useGameLogic() {
   // We pass a dummy initial state to the reducer, it will be initialized in the useEffect
-  const [state, dispatch] = useReducer(gameReducer, {} as GameState, getInitialState);
+  const [state, dispatch] = useReducer(gameReducer, {} as GameState);
   const [isInitialized, setIsInitialized] = useState(false);
 
-  useEffect(() => {
-    // Only run on client
-    if (typeof window !== 'undefined') {
-      dispatch({ type: 'INITIALIZE_GAME', payload: getInitialState() });
-      setIsInitialized(true);
-    }
-  }, []);
+  // This will now be controlled by the component using the hook
+  const initializeGame = (initialState: GameState) => {
+    dispatch({ type: 'INITIALIZE_GAME', payload: initialState });
+    setIsInitialized(true);
+  }
 
   useEffect(() => {
-    if (!isInitialized || state.phase !== 'PLAYING') return;
+    if (!isInitialized || state.phase !== 'PLAYING' || !state.turnTimer) return;
 
     const timer = setInterval(() => {
       dispatch({ type: 'TICK_TIMER' });
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [isInitialized, state.phase, state.currentPlayerIndex]); // Reset timer on turn change
+  }, [isInitialized, state.phase, state.currentPlayerIndex, state.turnTimer]); // Reset timer on turn change
 
-  return { state, dispatch, isInitialized };
+  return { state, dispatch, isInitialized, initializeGame };
 }

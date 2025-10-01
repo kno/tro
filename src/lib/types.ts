@@ -14,7 +14,7 @@ export interface CenterRowCard extends Card {
 }
 
 export interface Player {
-  id: number;
+  id: string; // Changed to string for Firebase UID
   name: string;
   hand: Card[];
   discardPile: Card[];
@@ -32,7 +32,6 @@ export interface GameState {
   centerRow: CenterRowCard[];
   currentPlayerIndex: 0 | 1;
   turnState: TurnState;
-  canFlipInitially: boolean;
   playedCardsThisTurn: number;
   roundEndReason: RoundEndReason;
   roundWinner: Player | null;

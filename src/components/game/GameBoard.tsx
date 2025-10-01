@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { useGameLogic } from '@/lib/game-logic';
 import { PlayerHand } from './PlayerHand';
