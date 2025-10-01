@@ -128,7 +128,17 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       if (!cardToPlay || state.turnState !== 'AWAITING_PLAY') return state;
 
       const newHand = currentPlayer.hand.filter((_, i) => i !== handIndex);
-      const newCenterRowCard: CenterRowCard = { ...cardToPlay, isFaceUp: !isBlind };
+      const newCenterRowCard: CenterRowCard = { 
+        ...cardToPlay, 
+        isFaceUp: !isBlind,
+        // If blind, the front becomes the back for the check, and vice-versa
+        frontColor: isBlind ? cardToPlay.backColor : cardToPlay.frontColor,
+        backColor: isBlind ? cardToPlay.frontColor : cardToPlay.backColor,
+      };
+
+      const logMessage = isBlind 
+        ? `${currentPlayer.name} jugó una carta a ciegas, revelando un ${newCenterRowCard.frontColor}.`
+        : `${currentPlayer.name} jugó un ${newCenterRowCard.frontColor}.`;
 
       const newState: GameState = {
         ...state,
@@ -136,7 +146,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         centerRow: [...state.centerRow, newCenterRowCard],
         playedCardsThisTurn: state.playedCardsThisTurn + 1,
         canFlipInitially: false,
-        lastActionLog: `${currentPlayer.name} jugó una carta ${isBlind ? 'a ciegas' : ''}.`
+        lastActionLog: logMessage
       };
       
       const { state: rowState, color: duplicateColor } = checkRowState(newState.centerRow);
@@ -329,8 +339,11 @@ export function useGameLogic() {
   const [isInitialized, setIsInitialized] = useState(false);
 
   useEffect(() => {
-    dispatch({ type: 'INITIALIZE_GAME', payload: getInitialState() });
-    setIsInitialized(true);
+    // Only run on client
+    if (typeof window !== 'undefined') {
+      dispatch({ type: 'INITIALIZE_GAME', payload: getInitialState() });
+      setIsInitialized(true);
+    }
   }, []);
 
   useEffect(() => {

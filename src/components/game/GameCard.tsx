@@ -35,13 +35,11 @@ interface GameCardProps {
 
 export function GameCard({ card, view, isFaceUp = true, onClick, onPlayBlind, className, isPlayable = false }: GameCardProps) {
   const getVisibleColor = (): Color | null => {
-    switch (view) {
-      case 'player': return card.frontColor;
-      case 'opponent': return card.backColor;
-      case 'center': return isFaceUp ? card.frontColor : card.backColor;
-      case 'discard': return card.frontColor;
-      default: return null;
-    }
+    if (view === 'player') return card.frontColor;
+    if (view === 'opponent') return card.backColor; // This is a simplification; opponents can't *really* see the back
+    if (view === 'center') return isFaceUp ? card.frontColor : card.backColor;
+    if (view === 'discard') return card.frontColor;
+    return null;
   };
 
   const visibleColor = getVisibleColor();
@@ -52,6 +50,7 @@ export function GameCard({ card, view, isFaceUp = true, onClick, onPlayBlind, cl
   }
 
   const cardContent = () => {
+    // For deck, or if a center card is meant to be face down but we don't have that info yet.
     if (view === 'deck' || (view === 'center' && isFaceUp === false)) {
       return <CardBack />;
     }
