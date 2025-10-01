@@ -9,7 +9,7 @@ import { ActionPanel } from './ActionPanel';
 import { EndGameDialog } from './EndGameDialog';
 import { RoundResultToast } from './RoundResultToast';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useDoc, useFirestore, useUser, useMemoFirebase, errorEmitter, FirestorePermissionError } from '@/firebase';
+import { useDoc, useFirestore, useUser, useMemoFirebase } from '@/firebase';
 import { doc, serverTimestamp, deleteDoc } from 'firebase/firestore';
 import type { Match, GameState } from '@/lib/types';
 import { setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
@@ -17,6 +17,7 @@ import { Loader2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { useRouter } from 'next/navigation';
+import { FirestorePermissionError, errorEmitter } from '@/firebase';
 
 function GameLoader() {
   return (
@@ -45,7 +46,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
   const [isCancelling, setIsCancelling] = useState(false);
   
   const matchRef = useMemoFirebase(() => 
-    doc(firestore, 'matches', matchId),
+    firestore ? doc(firestore, 'matches', matchId) : null,
     [firestore, matchId]
   );
 
@@ -55,37 +56,26 @@ export function GameBoard({ matchId }: GameBoardProps) {
 
   // Effect to sync remote match state to local reducer
   useEffect(() => {
-    if (match && match.gameState) {
-      // Initialize reducer only once with the first valid data from firestore
-      if(!state.phase) {
-          dispatch({ type: 'SET_GAME_STATE', payload: match.gameState });
-      } else if (match.status === 'PLAYING') {
-          // Sync subsequent states only if the game is active
-          // This avoids local state being overwritten by a stale firestore state during transitions (like round end)
-          const localPlayer = state.players.find(p => p.id === user?.uid);
-          const remotePlayerInLocalState = match.gameState.players.find(p => p.id === localPlayer?.id);
-          
-          if(localPlayer && remotePlayerInLocalState && localPlayer.discardPile.length < remotePlayerInLocalState.discardPile.length) {
-             dispatch({ type: 'SET_GAME_STATE', payload: match.gameState });
-          }
+    if (match && match.gameState && user) {
+      const isPlayer = match.gameState.players.some(p => p.id === user.uid);
+      if (isPlayer) {
+        dispatch({ type: 'SET_GAME_STATE', payload: match.gameState });
       }
     }
-  }, [match, state.phase, user]);
+  }, [match, user]);
   
   // Effect to sync local state back to Firestore
   useEffect(() => {
-    // Only run if the state is initialized and the user is a player
     if (!state.phase || !user || !state.players.find(p => p.id === user.uid) || !matchRef) return;
-
-    // Determine if the current user is the one who should be taking action
-    const isCurrentUserTurn = state.players[state.currentPlayerIndex]?.id === user.uid;
+    
+    const isMyTurn = state.players[state.currentPlayerIndex]?.id === user.uid;
     const isRoundOver = state.turnState === 'ROUND_OVER';
     
     // Allow update if it's the current user's turn, or if the round just ended (to sync result)
-    if (isCurrentUserTurn || isRoundOver) {
+    if (isMyTurn || isRoundOver) {
       const updateData = { 
             gameState: state,
-            status: state.phase === 'GAME_OVER' ? 'GAME_OVER' : 'PLAYING',
+            status: state.phase === 'GAME_OVER' ? 'GAME_OVER' : 'PLAYING' as const,
             updatedAt: serverTimestamp() 
       };
       setDocumentNonBlocking(matchRef, updateData, { merge: true });
@@ -93,6 +83,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
   }, [state, matchRef, user]);
 
   const handleCancelMatch = async () => {
+    if (!matchRef) return;
     setIsCancelling(true);
     deleteDoc(matchRef)
         .then(() => {
@@ -136,7 +127,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
                     )}
                 </CardContent>
                 <CardFooter>
-                    <Button variant="outline" onClick={handleCancelMatch} disabled={isCancelling} className="w-full">
+                    <Button variant="outline" onClick={handleCancelMatch} disabled={isCancelling || match.player1Id !== user?.uid} className="w-full">
                         {isCancelling ? <Loader2 className="animate-spin" /> : "Cancelar Partida"}
                     </Button>
                 </CardFooter>
@@ -146,7 +137,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
   }
 
   // If match is loaded but gameState hasn't been initialized in the reducer yet
-  if (!state.phase) {
+  if (!state.phase || !user) {
     return <GameLoader />;
   }
 
@@ -164,17 +155,18 @@ export function GameBoard({ matchId }: GameBoardProps) {
   };
   
   const handleRestart = () => {
-    if (state.players.length === 2) {
-      const newGameState = getInitialGameState(state.players);
-      dispatch({ type: 'SET_GAME_STATE', payload: newGameState });
-    }
+    dispatch({ type: 'RESTART_GAME' });
   };
 
-  const self = state.players.find(p => p.id === user?.uid);
-  const opponent = state.players.find(p => p.id !== user?.uid);
+  const self = state.players.find(p => p.id === user.uid);
+  const opponent = state.players.find(p => p.id !== user.uid);
   
   if (!self || !opponent) {
-    return <p>Error: No se pudieron cargar los datos de los jugadores.</p>;
+    return (
+       <div className="flex justify-center items-center h-full text-center text-muted-foreground">
+          <p>Error: No se pudieron cargar los datos de los jugadores. Puede que no formes parte de esta partida.</p>
+      </div>
+    );
   }
 
   const isMyTurn = state.players[state.currentPlayerIndex]?.id === self.id;
@@ -201,7 +193,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
         isMyTurn={isMyTurn}
       />
       
-      {state.turnState === 'ROUND_OVER' && <RoundResultToast state={state} onNextRound={handleNextRound} currentUserId={user!.uid} />}
+      {state.turnState === 'ROUND_OVER' && <RoundResultToast state={state} onNextRound={handleNextRound} currentUserId={user.uid} />}
       
       <EndGameDialog state={state} onRestart={handleRestart} />
     </div>

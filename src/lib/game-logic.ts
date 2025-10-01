@@ -27,7 +27,7 @@ export function createDeck(): Card[] {
   }
 
   const frontColors = [...colors];
-  const backColors = [...colors].sort(() => Math.random() - 0.5);
+  const backColors = [...colors].sort(() => 0.5 - Math.random());
 
   let deck = frontColors.map((frontColor, i) => ({
     id: i,
@@ -59,7 +59,7 @@ export function getInitialGameState(players: Player[]): GameState {
   });
 
   return {
-    phase: 'PLAYING',
+    phase: players.length === 2 ? 'PLAYING': 'LOBBY',
     players: players,
     deck: initialDeck,
     centerRow: [],
@@ -94,7 +94,8 @@ function checkRowState(centerRow: CenterRowCard[]): { state: RowState; color?: C
 }
 
 function isRainbowComplete(centerRow: CenterRowCard[]): boolean {
-  return centerRow.length === RAINBOW_SIZE;
+  const uniqueColors = new Set(centerRow.map(c => c.frontColor).filter(c => c !== 'White'));
+  return uniqueColors.size >= RAINBOW_SIZE;
 }
 
 // --- REDUCER ---
@@ -129,7 +130,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       const currentPlayer = state.players[state.currentPlayerIndex];
       const cardToPlay = currentPlayer.hand[handIndex];
       
-      if (!cardToPlay || state.turnState !== 'PLAYING' || state.playedCardsThisTurn >= 3) return state;
+      if (!cardToPlay || state.turnState !== 'ROUND_OVER' && state.playedCardsThisTurn >= 3) return state;
 
       const newHand = currentPlayer.hand.filter((_, i) => i !== handIndex);
 
@@ -190,11 +191,11 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       if (state.roundEndReason === 'RAINBOW_COMPLETE') {
         roundWinnerIndex = state.currentPlayerIndex;
         nextPlayerIndex = 1 - roundWinnerIndex; // Opponent starts
-        newPlayers[roundWinnerIndex].discardPile.push(...state.centerRow);
+        newPlayers[roundWinnerIndex].discardPile.push(...state.centerRow.map(c => ({...c, isFaceUp: true})));
       } else { // DUPLICATE_COLOR or BLACK_CARD
         roundWinnerIndex = 1 - state.currentPlayerIndex;
         nextPlayerIndex = state.currentPlayerIndex; // Loser starts
-        newPlayers[roundWinnerIndex].discardPile.push(...state.centerRow);
+        newPlayers[roundWinnerIndex].discardPile.push(...state.centerRow.map(c => ({...c, isFaceUp: true})));
       }
       const roundWinnerId = newPlayers[roundWinnerIndex].id;
       
@@ -236,7 +237,11 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     }
     
     case 'RESTART_GAME':
-      return getInitialGameState(state.players);
+       if (state.players.length === 2) {
+          const newPlayerObjects = state.players.map(p => ({ id: p.id, name: p.name, hand: [], discardPile: [] }));
+          return getInitialGameState(newPlayerObjects);
+        }
+        return state;
       
     case 'TICK_TIMER': {
        if (state.phase !== 'PLAYING' || state.turnState !== 'PLAYING') return state;
@@ -346,15 +351,16 @@ export function useGameLogic(matchId: string, initialMatchState: GameState) {
 
   // Effect to sync state to Firestore
   useEffect(() => {
-    if (!isInitialized || !user || state.phase !== 'PLAYING' || !state.players.find(p => p.id === user.uid)) return;
+    if (!isInitialized || !user || !state.phase || !state.players.find(p => p.id === user.uid)) return;
 
-    // Only the current player should update the state
-    if (state.players[state.currentPlayerIndex]?.id !== user.uid && state.turnState !== 'ROUND_OVER') {
-        return;
+    // Only the current player or a player in a ROUND_OVER state should update the state
+    const isMyTurn = state.players[state.currentPlayerIndex]?.id === user.uid;
+    const isRoundOverForMe = state.turnState === 'ROUND_OVER' && isMyTurn;
+
+    if (isMyTurn || isRoundOverForMe) {
+      const matchRef = doc(firestore, 'matches', matchId);
+      setDocumentNonBlocking(matchRef, { gameState: state }, { merge: true });
     }
-    
-    const matchRef = doc(firestore, 'matches', matchId);
-    setDocumentNonBlocking(matchRef, { gameState: state }, { merge: true });
 
   }, [state, matchId, firestore, isInitialized, user]);
 
