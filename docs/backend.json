@@ -1,0 +1,122 @@
+{
+  "entities": {
+    "Match": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Match",
+      "type": "object",
+      "description": "Represents a match between two players in the Tactical Rainbow Online game.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the match."
+        },
+        "player1Id": {
+          "type": "string",
+          "description": "Reference to the first player in the match. (Relationship: Match 1:N UserProfile)"
+        },
+        "player2Id": {
+          "type": "string",
+          "description": "Reference to the second player in the match. (Relationship: Match 1:N UserProfile)"
+        },
+        "status": {
+          "type": "string",
+          "description": "The current status of the match (e.g., LOBBY, SETUP, ROUND_START, GAME_END)."
+        },
+        "creationDate": {
+          "type": "string",
+          "description": "The date and time when the match was created.",
+          "format": "date-time"
+        },
+        "isPublic": {
+          "type": "boolean",
+          "description": "Indicates whether the match is public or private."
+        },
+        "joinCode": {
+          "type": "string",
+          "description": "The code required to join a private match. Null if the match is public."
+        },
+        "randomSeed": {
+          "type": "string",
+          "description": "The random seed used for this match to ensure reproducability."
+        }
+      },
+      "required": [
+        "id",
+        "player1Id",
+        "player2Id",
+        "status",
+        "creationDate",
+        "isPublic"
+      ]
+    },
+    "UserProfile": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "UserProfile",
+      "type": "object",
+      "description": "Represents a user profile.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the user profile."
+        },
+        "username": {
+          "type": "string",
+          "description": "The username of the user."
+        },
+        "email": {
+          "type": "string",
+          "description": "The email address of the user.",
+          "format": "email"
+        }
+      },
+      "required": [
+        "id",
+        "username",
+        "email"
+      ]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/userProfiles/{userId}",
+        "definition": {
+          "entityName": "UserProfile",
+          "schema": {
+            "$ref": "#/backend/entities/UserProfile"
+          },
+          "description": "Stores user profile information.  Authentication is handled via Firebase Auth; this collection stores additional profile data.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user, corresponding to their Firebase Auth UID."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/matches/{matchId}",
+        "definition": {
+          "entityName": "Match",
+          "schema": {
+            "$ref": "#/backend/entities/Match"
+          },
+          "description": "Stores match data. Includes denormalized 'player1Id' and 'player2Id' for authorization independence.",
+          "params": [
+            {
+              "name": "matchId",
+              "description": "The unique identifier for the match."
+            }
+          ]
+        }
+      }
+    ],
+    "reasoning": "The data structure prioritizes authorization independence and clear separation of concerns to support the game's features. User profiles are stored separately from match data. Matches are stored in a top-level collection (`matches`) and include denormalized player IDs (`player1Id`, `player2Id`) to facilitate security rules without relying on `get()` calls. Public matches are differentiated from private matches using the `isPublic` flag, supporting efficient querying for available public games. The `joinCode` field enables secure joining of private matches.\n\nThe structure supports QAPs by:\n\n*   **Secure List Operations:** The separation of public and private matches into a single collection allows listing of available public games securely, filtering by `isPublic` and `status` (e.g., LOBBY) in the query.\n*   **Authorization Independence:** Security rules can directly check `request.auth.uid` against `player1Id` and `player2Id` within the `match` document without needing to traverse relationships or use `get()` calls."
+  }
+}

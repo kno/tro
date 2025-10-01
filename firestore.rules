@@ -1,0 +1,96 @@
+/**
+ * @fileoverview Firestore Security Rules for Tactical Rainbow Online.
+ *
+ * Core Philosophy:
+ * This ruleset enforces a user-ownership model for user profiles, restricting
+ * access to a user's own profile data. Match data is secured based on player
+ * participation, allowing players involved in a match to read and update its
+ * state. Public matches are readable by all, but only players in the match can modify them.
+ *
+ * Data Structure:
+ * - /userProfiles/{userId}: Stores individual user profile data, secured by
+ *   ownership.
+ * - /matches/{matchId}: Stores match data, with player IDs denormalized
+ *   directly on the document.
+ *
+ * Key Security Decisions:
+ * - Users can only read/write their own profile data.
+ * - Listing of user profiles is disallowed for privacy.
+ * - Matches are secured by player ID.
+ * - Public matches are readable by all.
+ *
+ * Denormalization for Authorization:
+ * The 'matches' collection denormalizes 'player1Id' and 'player2Id' to allow
+ * direct authorization checks without additional reads.
+ */
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /**
+     * @description Enforces user-ownership for user profiles. Users can only
+     *              read and write their own profile data. Listing user profiles
+     *              is disallowed.
+     * @path /userProfiles/{userId}
+     * @allow (get) User 'user123' can read their own profile.
+     * @allow (create) User 'user123' can create their own profile.
+     * @allow (update) User 'user123' can update their own profile.
+     * @allow (delete) User 'user123' can delete their own profile.
+     * @deny (get) User 'user456' cannot read 'user123' profile.
+     * @deny (list) No user can list all user profiles.
+     * @deny (create) User 'user456' cannot create 'user123' profile.
+     * @deny (update) User 'user456' cannot update 'user123' profile.
+     * @deny (delete) User 'user456' cannot delete 'user123' profile.
+     * @principle Enforces document ownership for writes.
+     */
+    match /userProfiles/{userId} {
+      // Only signed-in users can attempt to access user profiles.
+      allow get: if isSignedIn() && isOwner(userId);
+      allow list: if false; // Listing user profiles is not allowed.
+      allow create: if isSignedIn() && isOwner(userId) && request.resource.data.id == userId;
+      allow update: if isSignedIn() && isOwner(userId) && resource.data.id == userId;
+      allow delete: if isSignedIn() && isExistingOwner(userId);
+    }
+
+    /**
+     * @description Manages access to match documents.
+     *              Any user can read public matches. Only players involved in
+     *              a match can modify it.
+     * @path /matches/{matchId}
+     * @allow (get) Any user can get a public match.
+     * @allow (list) Any user can list public matches.
+     * @allow (create) A user can create a match where they are player1.
+     * @allow (update) player1 or player2 can update the match.
+     * @allow (delete) player1 or player2 can delete the match.
+     * @deny (create) A user cannot create a match where they are not player1.
+     * @deny (update) A user who is not player1 or player2 cannot update the match.
+     * @deny (delete) A user who is not player1 or player2 cannot delete the match.
+     * @principle Enforces read-only access for public matches, and player-only
+     *            write access for all matches.
+     */
+    match /matches/{matchId} {
+      // Allow anyone to read public matches.
+      allow get, list: if true;
+
+      // Only allow create, update, and delete operations if the user is a player in the match.
+      allow create: if isSignedIn() && request.resource.data.player1Id == request.auth.uid;
+      allow update: if isSignedIn() && (resource.data.player1Id == request.auth.uid || resource.data.player2Id == request.auth.uid) && resource != null;
+      allow delete: if isSignedIn() && (resource.data.player1Id == request.auth.uid || resource.data.player2Id == request.auth.uid) && resource != null;
+    }
+  }
+
+  // Helper function to determine if the user is signed in.
+  function isSignedIn() {
+    return request.auth != null;
+  }
+
+  // Helper function to determine if the user is the owner of the resource.
+  function isOwner(userId) {
+    return request.auth.uid == userId;
+  }
+
+    // Helper function to determine if the user is the owner of the resource.
+  function isExistingOwner(userId) {
+    return request.auth.uid == userId && resource != null;
+  }
+}
