@@ -329,7 +329,7 @@ function endTurn(state: GameState): GameState {
     turnState: 'PLAYING' as TurnState,
     playedCardsThisTurn: 0,
     lastActionLog: state.lastActionLog.includes('tiempo') ? state.lastActionLog : `${state.players[state.currentPlayerIndex].name} terminó su turno. Turno de ${newPlayers[nextPlayerIndex].name}.`,
-    turnTimer: TURN_time_SECONDS
+    turnTimer: TURN_TIME_SECONDS
   };
 
   if (isGameOver) {
