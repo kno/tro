@@ -1,7 +1,8 @@
 'use client';
-import { useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
-import { useGameLogic, GameAction } from '@/lib/game-logic';
+import { useState, useEffect } from 'react';
+import { AnimatePresence } from 'framer-motion';
+import { useGameLogic } from '@/lib/game-logic';
+import type { GameState } from '@/lib/types';
 import { PlayerHand } from './PlayerHand';
 import { OpponentHand } from './OpponentHand';
 import { CenterRow } from './CenterRow';
@@ -9,10 +10,31 @@ import { GameInfoPanel } from './GameInfoPanel';
 import { ActionPanel } from './ActionPanel';
 import { EndGameDialog } from './EndGameDialog';
 import { RoundResultToast } from './RoundResultToast';
+import { Skeleton } from '@/components/ui/skeleton';
+
+function GameLoader() {
+  return (
+    <div className="w-full max-w-7xl mx-auto flex flex-col gap-4">
+       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Skeleton className="h-24" />
+        <Skeleton className="h-24" />
+        <Skeleton className="h-24" />
+        <Skeleton className="h-16 md:col-span-3" />
+      </div>
+      <Skeleton className="h-48" />
+      <Skeleton className="h-48" />
+      <Skeleton className="h-48" />
+    </div>
+  )
+}
 
 export function GameBoard() {
-  const { state, dispatch } = useGameLogic();
+  const { state, dispatch, isInitialized } = useGameLogic();
   const [selectedCardIndex, setSelectedCardIndex] = useState<number | null>(null);
+
+  if (!isInitialized) {
+    return <GameLoader />;
+  }
 
   const handlePlayCard = (handIndex: number, isBlind: boolean) => {
     dispatch({ type: 'PLAY_CARD', payload: { handIndex, isBlind } });
@@ -43,7 +65,7 @@ export function GameBoard() {
   const isPlayerTurn = state.currentPlayerIndex === 0;
 
   const canPlay = isPlayerTurn && state.turnState === 'AWAITING_PLAY' && state.playedCardsThisTurn < 3;
-  const canFlip = isPlayerTurn && (state.turnState === 'AWAITING_FLIP' || (state.turnState === 'AWAITING_PLAY' && state.canFlipInitially && state.centerRow.length > 0));
+  const canFlip = isPlayerTurn && (state.turnState === 'AWAITING_FLIP' || (state.canFlipInitially && state.centerRow.length > 0));
 
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col gap-4">

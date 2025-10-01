@@ -1,6 +1,7 @@
 import type { GameState } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { Card, CardContent } from '@/components/ui/card';
 
 interface ActionPanelProps {
   state: GameState;
@@ -11,7 +12,7 @@ interface ActionPanelProps {
 }
 
 export function ActionPanel({ state, onEndTurn, onPlayCard, selectedCardIndex, setSelectedCardIndex }: ActionPanelProps) {
-  const { turnState, playedCardsThisTurn, players, currentPlayerIndex } = state;
+  const { turnState, playedCardsThisTurn } = state;
   const isCurrentPlayerTurn = true; // Simplified for local play
   const canPlay = isCurrentPlayerTurn && turnState === 'AWAITING_PLAY' && playedCardsThisTurn < 3;
   
@@ -27,7 +28,7 @@ export function ActionPanel({ state, onEndTurn, onPlayCard, selectedCardIndex, s
       <CardContent className="p-4 flex flex-wrap items-center justify-center gap-4">
         <Button 
           onClick={onEndTurn} 
-          disabled={!canPlay}
+          disabled={!canPlay && playedCardsThisTurn === 0}
           variant="secondary"
         >
           Terminar Turno
@@ -46,7 +47,7 @@ export function ActionPanel({ state, onEndTurn, onPlayCard, selectedCardIndex, s
             <AlertDialogFooter>
               <AlertDialogCancel onClick={() => setSelectedCardIndex(null)}>Cancelar</AlertDialogCancel>
               <Button variant="outline" onClick={() => handleConfirmPlay(false)}>Jugar Normal</Button>
-              <Button variant="destructive" onClick={() => handleConfirmPlay(true)}>Jugar a Ciegas</Button>
+              <Button onClick={() => handleConfirmPlay(true)}>Jugar a Ciegas</Button>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
@@ -55,6 +56,3 @@ export function ActionPanel({ state, onEndTurn, onPlayCard, selectedCardIndex, s
     </Card>
   );
 }
-// Dummy Card and CardContent for compilation
-const Card = ({ className, children }: { className?: string; children: React.ReactNode }) => <div className={className}>{children}</div>;
-const CardContent = ({ className, children }: { className?: string; children: React.ReactNode }) => <div className={className}>{children}</div>;

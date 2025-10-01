@@ -1,5 +1,7 @@
+// This component is rendered on the client-side
+'use client';
+
 import { GameBoard } from '@/components/game/GameBoard';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 export default function Home() {
   return (

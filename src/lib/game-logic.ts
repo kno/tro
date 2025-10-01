@@ -1,7 +1,7 @@
 'use client';
 import type { GameState, Player, Card, Color, CenterRowCard, TurnState, RowState } from './types';
 import { COLORS, RAINBOW_COLORS } from './types';
-import { useReducer, useEffect } from 'react';
+import { useReducer, useEffect, useState } from 'react';
 
 // --- CONSTANTS ---
 const HAND_SIZE = 3;
@@ -106,10 +106,14 @@ export type GameAction =
   | { type: 'END_TURN' }
   | { type: 'START_NEXT_ROUND' }
   | { type: 'RESTART_GAME' }
-  | { type: 'TICK_TIMER' };
+  | { type: 'TICK_TIMER' }
+  | { type: 'INITIALIZE_GAME'; payload: GameState };
 
 
 export function gameReducer(state: GameState, action: GameAction): GameState {
+   if (action.type === 'INITIALIZE_GAME') {
+    return action.payload;
+  }
   if (state.phase !== 'PLAYING') {
     if (action.type === 'RESTART_GAME') return getInitialState();
     return state;
@@ -320,17 +324,24 @@ function checkGameOver(state: GameState): GameState {
 
 // --- CUSTOM HOOK ---
 export function useGameLogic() {
-  const [state, dispatch] = useReducer(gameReducer, getInitialState());
+  // We pass a dummy initial state to the reducer, it will be initialized in the useEffect
+  const [state, dispatch] = useReducer(gameReducer, {} as GameState);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   useEffect(() => {
-    if (state.phase !== 'PLAYING') return;
+    dispatch({ type: 'INITIALIZE_GAME', payload: getInitialState() });
+    setIsInitialized(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isInitialized || state.phase !== 'PLAYING') return;
 
     const timer = setInterval(() => {
       dispatch({ type: 'TICK_TIMER' });
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [state.phase, state.currentPlayerIndex]); // Reset timer on turn change
+  }, [isInitialized, state.phase, state.currentPlayerIndex]); // Reset timer on turn change
 
-  return { state, dispatch };
+  return { state, dispatch, isInitialized };
 }
