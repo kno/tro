@@ -3,11 +3,9 @@ import { GameCard } from './GameCard';
 
 interface CenterRowProps {
   cards: CenterRowCard[];
-  onFlipCard: (centerIndex: number) => void;
-  canFlip: boolean;
 }
 
-export function CenterRow({ cards, onFlipCard, canFlip }: CenterRowProps) {
+export function CenterRow({ cards }: CenterRowProps) {
   return (
     <div className="w-full bg-primary/10 rounded-lg p-4 my-4 min-h-[20vh] md:min-h-[25vh] flex items-center justify-center">
       <div className="flex justify-center items-center gap-2 md:gap-4 flex-wrap">
@@ -18,9 +16,7 @@ export function CenterRow({ cards, onFlipCard, canFlip }: CenterRowProps) {
               card={card}
               view="center"
               isFaceUp={card.isFaceUp}
-              onClick={() => onFlipCard(index)}
               className="w-20 md:w-28"
-              isPlayable={canFlip}
             />
           ))
         ) : (

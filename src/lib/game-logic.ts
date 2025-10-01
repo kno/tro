@@ -62,7 +62,7 @@ export function getInitialState(): GameState {
     deck: initialDeck,
     centerRow: [],
     currentPlayerIndex: Math.random() < 0.5 ? 0 : 1,
-    turnState: 'AWAITING_PLAY',
+    turnState: 'PLAYING',
     canFlipInitially: true,
     playedCardsThisTurn: 0,
     roundEndReason: null,
@@ -102,7 +102,6 @@ function isRainbowComplete(centerRow: CenterRowCard[]): boolean {
 // --- REDUCER ---
 export type GameAction =
   | { type: 'PLAY_CARD'; payload: { handIndex: number; isBlind: boolean } }
-  | { type: 'FLIP_CARD'; payload: { centerIndex: number } }
   | { type: 'END_TURN' }
   | { type: 'START_NEXT_ROUND' }
   | { type: 'RESTART_GAME' }
@@ -125,15 +124,19 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       const currentPlayer = state.players[state.currentPlayerIndex];
       const cardToPlay = currentPlayer.hand[handIndex];
       
-      if (!cardToPlay || state.turnState !== 'AWAITING_PLAY') return state;
+      if (!cardToPlay || state.turnState !== 'PLAYING') return state;
 
       const newHand = currentPlayer.hand.filter((_, i) => i !== handIndex);
-      const newCenterRowCard: CenterRowCard = { 
+
+      const cardForCenter: Card = { 
         ...cardToPlay, 
-        isFaceUp: !isBlind,
-        // If blind, the front becomes the back for the check, and vice-versa
         frontColor: isBlind ? cardToPlay.backColor : cardToPlay.frontColor,
         backColor: isBlind ? cardToPlay.frontColor : cardToPlay.backColor,
+      };
+      
+      const newCenterRowCard: CenterRowCard = { 
+        ...cardForCenter,
+        isFaceUp: true, // Card is always face up
       };
 
       const logMessage = isBlind 
@@ -164,35 +167,6 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         return endTurn(newState);
       }
       
-      return { ...newState, turnState: 'AWAITING_FLIP' };
-    }
-
-    case 'FLIP_CARD': {
-      const { centerIndex } = action.payload;
-      const cardToFlip = state.centerRow[centerIndex];
-      
-      if(!cardToFlip || state.turnState === 'AWAITING_PLAY' && !state.canFlipInitially && state.centerRow.length > 0) return state;
-
-      const newCenterRow = state.centerRow.map((c, i) => i === centerIndex ? { ...c, isFaceUp: !c.isFaceUp } : c);
-      const currentPlayer = state.players[state.currentPlayerIndex];
-      
-      const newState: GameState = {
-        ...state,
-        centerRow: newCenterRow,
-        canFlipInitially: false,
-        turnState: 'AWAITING_PLAY',
-        lastActionLog: `${currentPlayer.name} volteó una carta en la fila.`
-      };
-
-      const { state: rowState, color: duplicateColor } = checkRowState(newState.centerRow);
-      
-      if (rowState === 'BLACK_CARD') {
-        return { ...newState, roundEndReason: 'BLACK_CARD', lastActionLog: `Al voltear, se reveló una carta Negra. ${currentPlayer.name} pierde la ronda.` };
-      }
-      if (rowState === 'DUPLICATE_COLOR') {
-        return { ...newState, roundEndReason: 'DUPLICATE_COLOR', lastActionLog: `Al voltear, se reveló un color repetido (${duplicateColor}). ${currentPlayer.name} pierde la ronda.` };
-      }
-
       return newState;
     }
 
@@ -245,7 +219,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         deck: newDeck,
         centerRow: newCenterRow,
         currentPlayerIndex: nextPlayerIndex as 0 | 1,
-        turnState: 'AWAITING_PLAY',
+        turnState: 'PLAYING',
         canFlipInitially: true,
         playedCardsThisTurn: 0,
         roundEndReason: null,
@@ -299,7 +273,7 @@ function endTurn(state: GameState): GameState {
     deck: newDeck,
     players: newPlayers,
     currentPlayerIndex: nextPlayerIndex,
-    turnState: 'AWAITING_PLAY',
+    turnState: 'PLAYING',
     canFlipInitially: true,
     playedCardsThisTurn: 0,
     lastActionLog: state.lastActionLog.includes('tiempo') ? state.lastActionLog : `${state.players[state.currentPlayerIndex].name} terminó su turno. Turno de ${newPlayers[nextPlayerIndex].name}.`,
@@ -335,7 +309,7 @@ function checkGameOver(state: GameState): GameState {
 // --- CUSTOM HOOK ---
 export function useGameLogic() {
   // We pass a dummy initial state to the reducer, it will be initialized in the useEffect
-  const [state, dispatch] = useReducer(gameReducer, {} as GameState);
+  const [state, dispatch] = useReducer(gameReducer, {} as GameState, getInitialState);
   const [isInitialized, setIsInitialized] = useState(false);
 
   useEffect(() => {

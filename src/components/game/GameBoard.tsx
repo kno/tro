@@ -38,10 +38,6 @@ export function GameBoard() {
     dispatch({ type: 'PLAY_CARD', payload: { handIndex, isBlind } });
   };
   
-  const handleFlipCard = (centerIndex: number) => {
-    dispatch({ type: 'FLIP_CARD', payload: { centerIndex } });
-  };
-
   const handleEndTurn = () => {
     dispatch({ type: 'END_TURN' });
   };
@@ -58,8 +54,7 @@ export function GameBoard() {
   const opponent = state.players[1];
   const isPlayerTurn = state.currentPlayerIndex === 0;
 
-  const canPlay = isPlayerTurn && state.turnState === 'AWAITING_PLAY' && state.playedCardsThisTurn < 3;
-  const canFlip = isPlayerTurn && (state.turnState === 'AWAITING_FLIP' || (state.canFlipInitially && state.centerRow.length > 0));
+  const canPlay = isPlayerTurn && state.turnState === 'PLAYING' && state.playedCardsThisTurn < 3;
 
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col gap-4">
@@ -67,7 +62,7 @@ export function GameBoard() {
 
       <OpponentHand player={opponent} isCurrentPlayer={!isPlayerTurn} />
 
-      <CenterRow cards={state.centerRow} onFlipCard={handleFlipCard} canFlip={canFlip} />
+      <CenterRow cards={state.centerRow} />
 
       <PlayerHand 
         player={player} 

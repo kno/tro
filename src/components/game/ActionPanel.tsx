@@ -8,9 +8,9 @@ interface ActionPanelProps {
 }
 
 export function ActionPanel({ state, onEndTurn }: ActionPanelProps) {
-  const { turnState, playedCardsThisTurn } = state;
+  const { playedCardsThisTurn } = state;
   const isCurrentPlayerTurn = true; // Simplified for local play
-  const canEndTurn = isCurrentPlayerTurn && (turnState === 'AWAITING_PLAY' || playedCardsThisTurn > 0);
+  const canEndTurn = isCurrentPlayerTurn && playedCardsThisTurn > 0;
   
   return (
     <Card className="mt-4">

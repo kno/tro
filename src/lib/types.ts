@@ -20,7 +20,7 @@ export interface Player {
   discardPile: Card[];
 }
 
-export type TurnState = 'AWAITING_PLAY' | 'AWAITING_FLIP';
+export type TurnState = 'PLAYING';
 export type RowState = 'VALID' | 'DUPLICATE_COLOR' | 'BLACK_CARD';
 export type GamePhase = 'LOBBY' | 'PLAYING' | 'GAME_OVER';
 export type RoundEndReason = 'DUPLICATE_COLOR' | 'BLACK_CARD' | 'RAINBOW_COMPLETE' | null;
