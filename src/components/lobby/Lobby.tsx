@@ -6,8 +6,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '../ui/switch';
-import { useUser, useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collection, addDoc, serverTimestamp, query, where, limit, getDocs, doc, updateDoc, setDoc } from 'firebase/firestore';
+import { useUser, useFirestore, useCollection, useMemoFirebase, errorEmitter, FirestorePermissionError } from '@/firebase';
+import { collection, addDoc, serverTimestamp, query, where, limit, getDocs, doc, setDoc } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 import type { Match } from '@/lib/types';
 import { getInitialGameState } from '@/lib/game-logic';
@@ -44,29 +44,37 @@ export function Lobby() {
     setIsLoading(true);
     setError(null);
 
-    try {
-        const player1 = { id: user.uid, name: user.displayName || `Jugador ${user.uid.substring(0,5)}`, hand: [], discardPile: [] };
-        
-        const initialGameState = getInitialGameState([player1]);
+    const player1 = { id: user.uid, name: user.displayName || `Jugador ${user.uid.substring(0,5)}`, hand: [], discardPile: [] };
+    
+    const initialGameState = getInitialGameState([player1]);
 
-        const newMatch: Match = {
-            player1Id: user.uid,
-            player2Id: '',
-            status: 'LOBBY',
-            isPublic,
-            joinCode: isPublic ? '' : generateJoinCode(),
-            gameState: initialGameState,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-        };
+    const newMatch: Match = {
+        player1Id: user.uid,
+        player2Id: '',
+        status: 'LOBBY',
+        isPublic,
+        joinCode: isPublic ? '' : generateJoinCode(),
+        gameState: initialGameState,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+    };
 
-        const docRef = await addDoc(collection(firestore, 'matches'), newMatch);
+    addDoc(collection(firestore, 'matches'), newMatch)
+      .then((docRef) => {
         router.push(`/game/${docRef.id}`);
-    } catch (e) {
-        console.error("Error creating game: ", e);
+      })
+      .catch((err) => {
+        errorEmitter.emit(
+          'permission-error',
+          new FirestorePermissionError({
+            path: 'matches',
+            operation: 'create',
+            requestResourceData: newMatch,
+          })
+        );
         setError('No se pudo crear la partida.');
         setIsLoading(false);
-    }
+      });
   };
 
   const handleJoinWithCode = async () => {
@@ -105,26 +113,35 @@ export function Lobby() {
     if (!user || matchData.player1Id === user.uid) return;
     setIsLoading(true);
 
-    try {
-        const player2 = { id: user.uid, name: user.displayName || `Jugador ${user.uid.substring(0,5)}`, hand: [], discardPile: [] };
-        const players = [matchData.gameState.players[0], player2];
-        const newGameState = getInitialGameState(players);
+    const player2 = { id: user.uid, name: user.displayName || `Jugador ${user.uid.substring(0,5)}`, hand: [], discardPile: [] };
+    const players = [matchData.gameState.players[0], player2];
+    const newGameState = getInitialGameState(players);
 
-        const matchRef = doc(firestore, 'matches', matchId);
-        
-        await setDoc(matchRef, {
-            player2Id: user.uid,
-            status: 'PLAYING',
-            gameState: newGameState,
-            updatedAt: serverTimestamp(),
-        }, { merge: true });
+    const matchRef = doc(firestore, 'matches', matchId);
+    
+    const updateData = {
+        player2Id: user.uid,
+        status: 'PLAYING' as 'PLAYING',
+        gameState: newGameState,
+        updatedAt: serverTimestamp(),
+    };
 
+    setDoc(matchRef, updateData, { merge: true })
+      .then(() => {
         router.push(`/game/${matchId}`);
-    } catch (e) {
-        console.error("Error joining match: ", e);
+      })
+      .catch((err) => {
+        errorEmitter.emit(
+          'permission-error',
+          new FirestorePermissionError({
+            path: `matches/${matchId}`,
+            operation: 'update',
+            requestResourceData: updateData,
+          })
+        );
         setError("No se pudo unir a la partida.");
         setIsLoading(false);
-    }
+      });
   }
 
 
@@ -177,8 +194,8 @@ export function Lobby() {
                         publicMatches.map(match => (
                             <div key={match.id} className="flex justify-between items-center p-2 rounded-md bg-muted/50">
                                 <span>Partida de {match.gameState?.players?.[0]?.name || 'un jugador'}</span>
-                                <Button size="sm" onClick={() => handleJoinMatch(match.id, match)} disabled={isLoading}>
-                                    {isLoading ? <Loader2 className="animate-spin" /> : "Unirse"}
+                                <Button size="sm" onClick={() => handleJoinMatch(match.id, match)} disabled={isLoading || match.player1Id === user?.uid}>
+                                    {isLoading && !publicMatches.some(m => m.id === match.id) ? <Loader2 className="animate-spin" /> : "Unirse"}
                                 </Button>
                             </div>
                         ))

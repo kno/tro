@@ -1,7 +1,5 @@
-// src/components/game/GameBoard.tsx
 'use client';
 import { useReducer, useEffect, useState } from 'react';
-import { AnimatePresence } from 'framer-motion';
 import { gameReducer, getInitialGameState } from '@/lib/game-logic';
 import { PlayerHand } from './PlayerHand';
 import { OpponentHand } from './OpponentHand';
@@ -11,10 +9,10 @@ import { ActionPanel } from './ActionPanel';
 import { EndGameDialog } from './EndGameDialog';
 import { RoundResultToast } from './RoundResultToast';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useDoc, useFirestore, useUser, useMemoFirebase } from '@/firebase';
+import { useDoc, useFirestore, useUser, useMemoFirebase, errorEmitter, FirestorePermissionError } from '@/firebase';
 import { doc, serverTimestamp, deleteDoc } from 'firebase/firestore';
 import type { Match, GameState } from '@/lib/types';
-import { setDocumentNonBlocking, deleteDocumentNonBlocking } from '@/firebase/non-blocking-updates';
+import { setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 import { Loader2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
@@ -85,23 +83,31 @@ export function GameBoard({ matchId }: GameBoardProps) {
     
     // Allow update if it's the current user's turn, or if the round just ended (to sync result)
     if (isCurrentUserTurn || isRoundOver) {
-        setDocumentNonBlocking(matchRef, { 
+      const updateData = { 
             gameState: state,
             status: state.phase === 'GAME_OVER' ? 'GAME_OVER' : 'PLAYING',
             updatedAt: serverTimestamp() 
-        }, { merge: true });
+      };
+      setDocumentNonBlocking(matchRef, updateData, { merge: true });
     }
   }, [state, matchRef, user]);
 
   const handleCancelMatch = async () => {
     setIsCancelling(true);
-    try {
-        await deleteDoc(matchRef);
-        router.push('/');
-    } catch(e) {
-        console.error("Error cancelling match", e);
-        setIsCancelling(false);
-    }
+    deleteDoc(matchRef)
+        .then(() => {
+            router.push('/');
+        })
+        .catch(e => {
+            errorEmitter.emit(
+              'permission-error',
+              new FirestorePermissionError({
+                path: `matches/${matchId}`,
+                operation: 'delete',
+              })
+            );
+            setIsCancelling(false);
+        });
   };
 
 
@@ -195,9 +201,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
         isMyTurn={isMyTurn}
       />
       
-      <AnimatePresence>
-        {state.turnState === 'ROUND_OVER' && <RoundResultToast state={state} onNextRound={handleNextRound} currentUserId={user!.uid} />}
-      </AnimatePresence>
+      {state.turnState === 'ROUND_OVER' && <RoundResultToast state={state} onNextRound={handleNextRound} currentUserId={user!.uid} />}
       
       <EndGameDialog state={state} onRestart={handleRestart} />
     </div>
