@@ -1,7 +1,11 @@
 'use client';
-import type { GameState, Player, Card, Color, CenterRowCard, TurnState, RowState } from './types';
+import type { GameState, Player, Card, Color, CenterRowCard, TurnState, RowState, GamePhase } from './types';
 import { COLORS, RAINBOW_COLORS } from './types';
 import { useReducer, useEffect, useState } from 'react';
+import { doc, setDoc } from 'firebase/firestore';
+import { useFirestore, useUser } from '@/firebase/provider';
+import { setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
+
 
 // --- CONSTANTS ---
 const HAND_SIZE = 3;
@@ -41,33 +45,30 @@ export function createDeck(): Card[] {
 }
 
 // --- INITIAL STATE ---
-export function getInitialState(): GameState {
+export function getInitialGameState(players: Player[]): GameState {
   const initialDeck = createDeck();
-  const player1Hand: Card[] = [];
-  const player2Hand: Card[] = [];
-
-  for (let i = 0; i < HAND_SIZE; i++) {
-    player1Hand.push(initialDeck.pop()!);
-    player2Hand.push(initialDeck.pop()!);
-  }
   
-  const players: [Player, Player] = [
-    { id: '1', name: 'Jugador 1', hand: player1Hand, discardPile: [] },
-    { id: '2', name: 'Jugador 2', hand: player2Hand, discardPile: [] },
-  ];
+  players.forEach(player => {
+    player.hand = [];
+    player.discardPile = [];
+    for (let i = 0; i < HAND_SIZE; i++) {
+      if (initialDeck.length > 0) {
+        player.hand.push(initialDeck.pop()!);
+      }
+    }
+  });
 
   return {
     phase: 'PLAYING',
-    players,
+    players: players,
     deck: initialDeck,
     centerRow: [],
     currentPlayerIndex: Math.random() < 0.5 ? 0 : 1,
     turnState: 'PLAYING',
     playedCardsThisTurn: 0,
     roundEndReason: null,
-    roundWinner: null,
-    roundLoser: null,
-    gameWinner: null,
+    roundWinnerId: null,
+    gameWinnerId: null,
     isTie: false,
     lastActionLog: 'La partida ha comenzado.',
     turnTimer: TURN_TIME_SECONDS
@@ -98,20 +99,27 @@ function isRainbowComplete(centerRow: CenterRowCard[]): boolean {
 
 // --- REDUCER ---
 export type GameAction =
+  | { type: 'SET_GAME_STATE'; payload: GameState }
   | { type: 'PLAY_CARD'; payload: { handIndex: number; isBlind: boolean } }
   | { type: 'END_TURN' }
   | { type: 'START_NEXT_ROUND' }
   | { type: 'RESTART_GAME' }
-  | { type: 'TICK_TIMER' }
-  | { type: 'INITIALIZE_GAME'; payload: GameState };
+  | { type: 'TICK_TIMER' };
 
 
 export function gameReducer(state: GameState, action: GameAction): GameState {
-   if (action.type === 'INITIALIZE_GAME') {
+   if (action.type === 'SET_GAME_STATE') {
     return action.payload;
   }
+   if (!state || !state.phase) {
+    return {} as GameState; // Return empty state if not initialized
+  }
+
   if (state.phase !== 'PLAYING') {
-    if (action.type === 'RESTART_GAME') return getInitialState();
+    if (action.type === 'RESTART_GAME' && state.players.length === 2) {
+       const newPlayerObjects = state.players.map(p => ({ ...p, hand: [], discardPile: [] }));
+       return getInitialGameState(newPlayerObjects);
+    }
     return state;
   }
   
@@ -121,7 +129,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       const currentPlayer = state.players[state.currentPlayerIndex];
       const cardToPlay = currentPlayer.hand[handIndex];
       
-      if (!cardToPlay || state.turnState !== 'PLAYING') return state;
+      if (!cardToPlay || state.turnState !== 'PLAYING' || state.playedCardsThisTurn >= 3) return state;
 
       const newHand = currentPlayer.hand.filter((_, i) => i !== handIndex);
 
@@ -142,7 +150,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 
       const newState: GameState = {
         ...state,
-        players: state.players.map((p, i) => i === state.currentPlayerIndex ? { ...p, hand: newHand } : p) as [Player, Player],
+        players: state.players.map((p, i) => i === state.currentPlayerIndex ? { ...p, hand: newHand } : p),
         centerRow: [...state.centerRow, newCenterRowCard],
         playedCardsThisTurn: state.playedCardsThisTurn + 1,
         lastActionLog: logMessage
@@ -151,13 +159,13 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       const { state: rowState, color: duplicateColor } = checkRowState(newState.centerRow);
       
       if (rowState === 'BLACK_CARD') {
-        return { ...newState, roundEndReason: 'BLACK_CARD', lastActionLog: `${currentPlayer.name} reveló una carta Negra y perdió la ronda.` };
+        return { ...newState, turnState: 'ROUND_OVER', roundEndReason: 'BLACK_CARD', lastActionLog: `${currentPlayer.name} reveló una carta Negra y perdió la ronda.` };
       }
       if (rowState === 'DUPLICATE_COLOR') {
-        return { ...newState, roundEndReason: 'DUPLICATE_COLOR', lastActionLog: `${currentPlayer.name} reveló un color repetido (${duplicateColor}) y perdió la ronda.` };
+        return { ...newState, turnState: 'ROUND_OVER', roundEndReason: 'DUPLICATE_COLOR', lastActionLog: `${currentPlayer.name} reveló un color repetido (${duplicateColor}) y perdió la ronda.` };
       }
       if (isRainbowComplete(newState.centerRow)) {
-        return { ...newState, roundEndReason: 'RAINBOW_COMPLETE', lastActionLog: `${currentPlayer.name} completó un ARCOÍRIS!` };
+        return { ...newState, turnState: 'ROUND_OVER', roundEndReason: 'RAINBOW_COMPLETE', lastActionLog: `${currentPlayer.name} completó un ARCOÍRIS!` };
       }
       if (newState.playedCardsThisTurn === 3) {
         return endTurn(newState);
@@ -176,7 +184,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       let roundWinnerIndex: number;
       let nextPlayerIndex: number;
       
-      const newPlayers = [...state.players] as [Player, Player];
+      const newPlayers = [...state.players];
       let newCenterRow: CenterRowCard[] = [];
 
       if (state.roundEndReason === 'RAINBOW_COMPLETE') {
@@ -188,6 +196,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         nextPlayerIndex = state.currentPlayerIndex; // Loser starts
         newPlayers[roundWinnerIndex].discardPile.push(...state.centerRow);
       }
+      const roundWinnerId = newPlayers[roundWinnerIndex].id;
       
       // Draw cards
       const newDeck = [...state.deck];
@@ -205,28 +214,32 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         if (isGameOver) break;
       }
       
-      if(isGameOver) {
-        return checkGameOver(state);
-      }
-      
-      return {
+      const updatedState = {
         ...state,
         players: newPlayers,
         deck: newDeck,
         centerRow: newCenterRow,
         currentPlayerIndex: nextPlayerIndex as 0 | 1,
-        turnState: 'PLAYING',
+        turnState: 'PLAYING' as TurnState,
         playedCardsThisTurn: 0,
         roundEndReason: null,
+        roundWinnerId,
         lastActionLog: `${newPlayers[roundWinnerIndex].name} ganó la ronda. ${newPlayers[nextPlayerIndex].name} empieza.`,
         turnTimer: TURN_TIME_SECONDS
       };
+      
+      if(isGameOver) {
+        return checkGameOver(updatedState);
+      }
+      
+      return updatedState;
     }
     
     case 'RESTART_GAME':
-      return getInitialState();
+      return getInitialGameState(state.players);
       
     case 'TICK_TIMER': {
+       if (state.phase !== 'PLAYING' || state.turnState !== 'PLAYING') return state;
       if (state.turnTimer > 0) {
         return { ...state, turnTimer: state.turnTimer - 1 };
       } else {
@@ -242,85 +255,108 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 
 function endTurn(state: GameState): GameState {
   const newDeck = [...state.deck];
-  const newPlayers = [...state.players] as [Player, Player];
+  const newPlayers = [...state.players];
   let isGameOver = false;
 
-  for (let i = 0; i < newPlayers.length; i++) {
-    while (newPlayers[i].hand.length < HAND_SIZE) {
-      if (newDeck.length > 0) {
-        newPlayers[i].hand.push(newDeck.pop()!);
-      } else {
-        isGameOver = true;
-        break;
+  newPlayers.forEach(p => {
+      while (p.hand.length < HAND_SIZE) {
+        if (newDeck.length > 0) {
+            p.hand.push(newDeck.pop()!);
+        } else {
+            isGameOver = true;
+            return;
+        }
       }
-    }
-    if (isGameOver) break;
-  }
+  })
   
-  if (isGameOver) {
-    return checkGameOver(state);
-  }
-
   const nextPlayerIndex = (1 - state.currentPlayerIndex) as 0 | 1;
 
-  return {
+  const updatedState = {
     ...state,
     deck: newDeck,
     players: newPlayers,
     currentPlayerIndex: nextPlayerIndex,
-    turnState: 'PLAYING',
+    turnState: 'PLAYING' as TurnState,
     playedCardsThisTurn: 0,
     lastActionLog: state.lastActionLog.includes('tiempo') ? state.lastActionLog : `${state.players[state.currentPlayerIndex].name} terminó su turno. Turno de ${newPlayers[nextPlayerIndex].name}.`,
     turnTimer: TURN_TIME_SECONDS
   };
+
+  if (isGameOver) {
+    return checkGameOver(updatedState);
+  }
+
+  return updatedState;
 }
 
 
 function checkGameOver(state: GameState): GameState {
+    if (state.players.length < 2) return state;
     const p1Score = state.players[0].discardPile.length;
     const p2Score = state.players[1].discardPile.length;
-    let winner = null;
+    let winnerId = null;
     let isTie = false;
 
     if (p1Score > p2Score) {
-      winner = state.players[0];
+      winnerId = state.players[0].id;
     } else if (p2Score > p1Score) {
-      winner = state.players[1];
+      winnerId = state.players[1].id;
     } else {
       isTie = true;
     }
     
     return {
       ...state,
-      phase: 'GAME_OVER',
-      gameWinner: winner,
+      phase: 'GAME_OVER' as GamePhase,
+      gameWinnerId: winnerId,
       isTie: isTie,
-      lastActionLog: isTie ? `¡Empate!` : `Fin de la partida. ¡${winner?.name} gana!`,
+      lastActionLog: isTie ? `¡Empate!` : `Fin de la partida. ¡${winnerId === state.players[0].id ? state.players[0].name : state.players[1].name} gana!`,
     }
 }
 
 
 // --- CUSTOM HOOK ---
-export function useGameLogic() {
-  // We pass a dummy initial state to the reducer, it will be initialized in the useEffect
-  const [state, dispatch] = useReducer(gameReducer, {} as GameState);
+export function useGameLogic(matchId: string, initialMatchState: GameState) {
+  const [state, dispatch] = useReducer(gameReducer, initialMatchState);
+  const firestore = useFirestore();
+  const { user } = useUser();
   const [isInitialized, setIsInitialized] = useState(false);
-
-  // This will now be controlled by the component using the hook
-  const initializeGame = (initialState: GameState) => {
-    dispatch({ type: 'INITIALIZE_GAME', payload: initialState });
-    setIsInitialized(true);
-  }
-
+  
+  // Effect to update local state when initialMatchState from props changes
   useEffect(() => {
-    if (!isInitialized || state.phase !== 'PLAYING' || !state.turnTimer) return;
+    if (initialMatchState) {
+      dispatch({ type: 'SET_GAME_STATE', payload: initialMatchState });
+      setIsInitialized(true);
+    }
+  }, [initialMatchState]);
+
+
+  // Effect to tick timer
+  useEffect(() => {
+    if (!isInitialized || !user || state.phase !== 'PLAYING' || state.players[state.currentPlayerIndex]?.id !== user.uid) {
+        return;
+    }
 
     const timer = setInterval(() => {
       dispatch({ type: 'TICK_TIMER' });
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [isInitialized, state.phase, state.currentPlayerIndex, state.turnTimer]); // Reset timer on turn change
+  }, [isInitialized, state.phase, state.currentPlayerIndex, state.turnTimer, state.players, user]);
 
-  return { state, dispatch, isInitialized, initializeGame };
+  // Effect to sync state to Firestore
+  useEffect(() => {
+    if (!isInitialized || !user || state.phase !== 'PLAYING' || !state.players.find(p => p.id === user.uid)) return;
+
+    // Only the current player should update the state
+    if (state.players[state.currentPlayerIndex]?.id !== user.uid && state.turnState !== 'ROUND_OVER') {
+        return;
+    }
+    
+    const matchRef = doc(firestore, 'matches', matchId);
+    setDocumentNonBlocking(matchRef, { gameState: state }, { merge: true });
+
+  }, [state, matchId, firestore, isInitialized, user]);
+
+  return { state, dispatch, isInitialized };
 }

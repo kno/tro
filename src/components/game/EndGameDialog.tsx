@@ -16,9 +16,11 @@ interface EndGameDialogProps {
 }
 
 export function EndGameDialog({ state, onRestart }: EndGameDialogProps) {
-    if (state.phase !== 'GAME_OVER') {
+    if (state.phase !== 'GAME_OVER' || state.players.length < 2) {
         return null;
     }
+
+    const winner = state.players.find(p => p.id === state.gameWinnerId);
 
     return (
         <AlertDialog open={true}>
@@ -29,7 +31,7 @@ export function EndGameDialog({ state, onRestart }: EndGameDialogProps) {
                         ¡Fin de la Partida!
                     </AlertDialogTitle>
                     <AlertDialogDescription className="text-lg pt-4">
-                        {state.isTie ? "Ha sido un empate." : `${state.gameWinner?.name} ha ganado la partida.`}
+                        {state.isTie ? "Ha sido un empate." : `${winner?.name} ha ganado la partida.`}
                     </AlertDialogDescription>
                     <div className="pt-2 text-base">
                         <p>Puntuación Final:</p>

@@ -14,7 +14,7 @@ export interface CenterRowCard extends Card {
 }
 
 export interface Player {
-  id: string; // Changed to string for Firebase UID
+  id: string; // Firebase UID
   name: string;
   hand: Card[];
   discardPile: Card[];
@@ -27,17 +27,29 @@ export type RoundEndReason = 'DUPLICATE_COLOR' | 'BLACK_CARD' | 'RAINBOW_COMPLET
 
 export interface GameState {
   phase: GamePhase;
-  players: [Player, Player];
+  players: Player[]; // Can be 1 or 2 players
   deck: Card[];
   centerRow: CenterRowCard[];
   currentPlayerIndex: 0 | 1;
   turnState: TurnState;
   playedCardsThisTurn: number;
   roundEndReason: RoundEndReason;
-  roundWinner: Player | null;
-  roundLoser: Player | null;
-  gameWinner: Player | null;
+  roundWinnerId: string | null;
+  gameWinnerId: string | null;
   isTie: boolean;
   lastActionLog: string;
   turnTimer: number;
+}
+
+// Firestore Match Document
+export interface Match {
+    id?: string; // Document ID
+    player1Id: string;
+    player2Id: string; // Empty if waiting
+    status: 'LOBBY' | 'PLAYING' | 'GAME_OVER';
+    isPublic: boolean;
+    joinCode?: string;
+    gameState: GameState;
+    createdAt: any; // Firestore ServerTimestamp
+    updatedAt: any; // Firestore ServerTimestamp
 }

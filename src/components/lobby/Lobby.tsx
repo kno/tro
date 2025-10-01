@@ -6,27 +6,135 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '../ui/switch';
+import { useUser, useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+import { collection, addDoc, serverTimestamp, query, where, limit, getDocs, doc, updateDoc, setDoc } from 'firebase/firestore';
+import { useRouter } from 'next/navigation';
+import type { Match } from '@/lib/types';
+import { getInitialGameState } from '@/lib/game-logic';
+import { Loader2 } from 'lucide-react';
+
+function generateJoinCode() {
+  return Math.random().toString(36).substring(2, 8).toUpperCase();
+}
+
 
 export function Lobby() {
   const [isPublic, setIsPublic] = useState(true);
   const [joinCode, setJoinCode] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
+  const { user } = useUser();
+  const firestore = useFirestore();
+  const router = useRouter();
 
-  const handleCreateGame = () => {
-    // TODO: Implement game creation logic
-    console.log(`Creating a ${isPublic ? 'public' : 'private'} game.`);
+  const publicMatchesQuery = useMemoFirebase(() => 
+    query(
+        collection(firestore, 'matches'), 
+        where('isPublic', '==', true),
+        where('status', '==', 'LOBBY'),
+        limit(10)
+    ), 
+  [firestore]);
+  
+  const { data: publicMatches, isLoading: isLoadingPublicMatches } = useCollection<Match>(publicMatchesQuery);
+
+  const handleCreateGame = async () => {
+    if (!user) return;
+    setIsLoading(true);
+    setError(null);
+
+    try {
+        const player1 = { id: user.uid, name: user.displayName || `Jugador ${user.uid.substring(0,5)}`, hand: [], discardPile: [] };
+        
+        const initialGameState = getInitialGameState([player1]);
+
+        const newMatch: Match = {
+            player1Id: user.uid,
+            player2Id: '',
+            status: 'LOBBY',
+            isPublic,
+            joinCode: isPublic ? '' : generateJoinCode(),
+            gameState: initialGameState,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+        };
+
+        const docRef = await addDoc(collection(firestore, 'matches'), newMatch);
+        router.push(`/game/${docRef.id}`);
+    } catch (e) {
+        console.error("Error creating game: ", e);
+        setError('No se pudo crear la partida.');
+        setIsLoading(false);
+    }
   };
 
-  const handleJoinWithCode = () => {
-    // TODO: Implement join with code logic
-    console.log(`Joining with code: ${joinCode}`);
+  const handleJoinWithCode = async () => {
+    if (!user || !joinCode) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+        const q = query(collection(firestore, "matches"), where("joinCode", "==", joinCode), limit(1));
+        const querySnapshot = await getDocs(q);
+
+        if (querySnapshot.empty) {
+            setError("No se encontró ninguna partida con ese código.");
+            setIsLoading(false);
+            return;
+        }
+        
+        const matchDoc = querySnapshot.docs[0];
+        const match = matchDoc.data() as Match;
+
+        if (match.status !== 'LOBBY') {
+             setError("Esta partida ya ha comenzado.");
+             setIsLoading(false);
+             return;
+        }
+
+        await handleJoinMatch(matchDoc.id, match);
+
+    } catch (e) {
+        console.error("Error joining game: ", e);
+        setError("No se pudo unir a la partida.");
+        setIsLoading(false);
+    }
   };
+
+  const handleJoinMatch = async (matchId: string, matchData: Match) => {
+    if (!user || matchData.player1Id === user.uid) return;
+    setIsLoading(true);
+
+    try {
+        const player2 = { id: user.uid, name: user.displayName || `Jugador ${user.uid.substring(0,5)}`, hand: [], discardPile: [] };
+        const players = [matchData.gameState.players[0], player2];
+        const newGameState = getInitialGameState(players);
+
+        const matchRef = doc(firestore, 'matches', matchId);
+        
+        await setDoc(matchRef, {
+            player2Id: user.uid,
+            status: 'PLAYING',
+            gameState: newGameState,
+            updatedAt: serverTimestamp(),
+        }, { merge: true });
+
+        router.push(`/game/${matchId}`);
+    } catch (e) {
+        console.error("Error joining match: ", e);
+        setError("No se pudo unir a la partida.");
+        setIsLoading(false);
+    }
+  }
+
 
   return (
     <div className="max-w-2xl mx-auto">
+      {error && <p className="text-destructive text-center mb-4">{error}</p>}
       <Tabs defaultValue="join">
         <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="join">Unirse a Partida</TabsTrigger>
-          <TabsTrigger value="create">Crear Partida</TabsTrigger>
+          <TabsTrigger value="join" disabled={isLoading}>Unirse a Partida</TabsTrigger>
+          <TabsTrigger value="create" disabled={isLoading}>Crear Partida</TabsTrigger>
         </TabsList>
         <TabsContent value="join">
           <Card>
@@ -42,9 +150,12 @@ export function Lobby() {
                     id="join-code" 
                     placeholder="Introduce el código" 
                     value={joinCode}
-                    onChange={(e) => setJoinCode(e.target.value)}
+                    onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+                    disabled={isLoading}
                   />
-                  <Button onClick={handleJoinWithCode} disabled={!joinCode}>Unirse</Button>
+                  <Button onClick={handleJoinWithCode} disabled={!joinCode || isLoading}>
+                    {isLoading ? <Loader2 className="animate-spin" /> : "Unirse"}
+                  </Button>
                 </div>
               </div>
               <div className="relative">
@@ -57,9 +168,25 @@ export function Lobby() {
               </div>
               <div>
                 <CardTitle className='text-lg mb-2'>Partidas Públicas</CardTitle>
-                {/* TODO: List public games */}
-                <div className="border rounded-lg p-8 text-center text-muted-foreground">
-                  <p>No hay partidas públicas disponibles en este momento.</p>
+                <div className="border rounded-lg p-4 min-h-[10rem] space-y-2">
+                    {isLoadingPublicMatches ? (
+                        <div className="flex justify-center items-center h-full">
+                            <Loader2 className="animate-spin text-muted-foreground" />
+                        </div>
+                    ) : publicMatches && publicMatches.length > 0 ? (
+                        publicMatches.map(match => (
+                            <div key={match.id} className="flex justify-between items-center p-2 rounded-md bg-muted/50">
+                                <span>Partida de {match.gameState?.players?.[0]?.name || 'un jugador'}</span>
+                                <Button size="sm" onClick={() => handleJoinMatch(match.id, match)} disabled={isLoading}>
+                                    {isLoading ? <Loader2 className="animate-spin" /> : "Unirse"}
+                                </Button>
+                            </div>
+                        ))
+                    ) : (
+                         <div className="flex justify-center items-center h-full text-center text-muted-foreground">
+                            <p>No hay partidas públicas disponibles.</p>
+                        </div>
+                    )}
                 </div>
               </div>
             </CardContent>
@@ -81,10 +208,10 @@ export function Lobby() {
                     Tu partida será visible para todos en el lobby.
                   </p>
                 </div>
-                <Switch checked={isPublic} onCheckedChange={setIsPublic} />
+                <Switch checked={isPublic} onCheckedChange={setIsPublic} disabled={isLoading} />
               </div>
-               <Button onClick={handleCreateGame} className="w-full">
-                Crear Partida
+               <Button onClick={handleCreateGame} className="w-full" disabled={isLoading}>
+                {isLoading ? <Loader2 className="animate-spin" /> : "Crear Partida"}
               </Button>
             </CardContent>
           </Card>

@@ -2,18 +2,28 @@ import type { GameState } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Award, ShieldAlert } from 'lucide-react';
+import { useUser } from '@/firebase';
 
 interface RoundResultToastProps {
   state: GameState;
   onNextRound: () => void;
+  currentUserId: string;
 }
 
-export function RoundResultToast({ state, onNextRound }: RoundResultToastProps) {
-  if (!state.roundEndReason) return null;
+export function RoundResultToast({ state, onNextRound, currentUserId }: RoundResultToastProps) {
+  if (!state.roundEndReason || state.turnState !== 'ROUND_OVER') return null;
   
   const { roundEndReason, lastActionLog, players, currentPlayerIndex } = state;
-  const winnerIndex = roundEndReason === 'RAINBOW_COMPLETE' ? currentPlayerIndex : 1 - currentPlayerIndex;
+  
+  let winnerIndex: number;
+  if (state.roundEndReason === 'RAINBOW_COMPLETE') {
+    winnerIndex = state.currentPlayerIndex;
+  } else { // DUPLICATE_COLOR or BLACK_CARD
+    winnerIndex = 1 - state.currentPlayerIndex;
+  }
   const winner = players[winnerIndex];
+
+  const isMyTurnToAct = players[currentPlayerIndex].id === currentUserId;
 
   return (
      <div className="fixed inset-0 bg-black/60 z-40 flex items-center justify-center">
@@ -27,9 +37,14 @@ export function RoundResultToast({ state, onNextRound }: RoundResultToastProps) 
             </CardHeader>
             <CardContent className="text-center">
                 <p className="text-muted-foreground mb-4">{lastActionLog}</p>
-                <Button onClick={onNextRound} className="w-full">
-                    Siguiente Ronda
-                </Button>
+                 {isMyTurnToAct && (
+                    <Button onClick={onNextRound} className="w-full">
+                        Siguiente Ronda
+                    </Button>
+                )}
+                {!isMyTurnToAct && (
+                    <p className="text-sm text-muted-foreground">Esperando a que {players[currentPlayerIndex].name} inicie la siguiente ronda...</p>
+                )}
             </CardContent>
         </Card>
      </div>

@@ -5,12 +5,12 @@ import { Card, CardContent } from '@/components/ui/card';
 interface ActionPanelProps {
   state: GameState;
   onEndTurn: () => void;
+  isMyTurn: boolean;
 }
 
-export function ActionPanel({ state, onEndTurn }: ActionPanelProps) {
-  const { playedCardsThisTurn } = state;
-  const isCurrentPlayerTurn = true; // Simplified for local play
-  const canEndTurn = isCurrentPlayerTurn && playedCardsThisTurn > 0;
+export function ActionPanel({ state, onEndTurn, isMyTurn }: ActionPanelProps) {
+  const { playedCardsThisTurn, turnState } = state;
+  const canEndTurn = isMyTurn && playedCardsThisTurn > 0 && turnState === 'PLAYING';
   
   return (
     <Card className="mt-4">
