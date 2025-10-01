@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 
 interface PlayerHandProps {
   player: Player;
-  onPlayCard: (handIndex: number) => void;
+  onPlayCard: (handIndex: number, isBlind: boolean) => void;
   isCurrentPlayer: boolean;
   canPlay: boolean;
 }
@@ -24,7 +24,8 @@ export function PlayerHand({ player, onPlayCard, isCurrentPlayer, canPlay }: Pla
                 key={card.id}
                 card={card}
                 view="player"
-                onClick={() => onPlayCard(index)}
+                onClick={() => onPlayCard(index, false)}
+                onPlayBlind={() => onPlayCard(index, true)}
                 className="w-20 md:w-28"
                 isPlayable={isCurrentPlayer && canPlay}
               />

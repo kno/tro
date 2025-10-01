@@ -1,7 +1,7 @@
 import type { Card, Color } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { ColorIcon } from '@/components/icons';
-import { motion } from 'framer-motion';
+import { EyeOff } from 'lucide-react';
 
 const COLOR_STYLES: Record<Color, string> = {
   Red: 'bg-red-500 border-red-700 text-white',
@@ -28,11 +28,12 @@ interface GameCardProps {
   view: 'player' | 'opponent' | 'center' | 'deck' | 'discard';
   isFaceUp?: boolean;
   onClick?: () => void;
+  onPlayBlind?: () => void;
   className?: string;
   isPlayable?: boolean;
 }
 
-export function GameCard({ card, view, isFaceUp = true, onClick, className, isPlayable = false }: GameCardProps) {
+export function GameCard({ card, view, isFaceUp = true, onClick, onPlayBlind, className, isPlayable = false }: GameCardProps) {
   const getVisibleColor = (): Color | null => {
     switch (view) {
       case 'player': return card.frontColor;
@@ -45,6 +46,11 @@ export function GameCard({ card, view, isFaceUp = true, onClick, className, isPl
 
   const visibleColor = getVisibleColor();
   
+  const handleBlindPlayClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if(onPlayBlind) onPlayBlind();
+  }
+
   const cardContent = () => {
     if (view === 'deck' || (view === 'center' && isFaceUp === false)) {
       return <CardBack />;
@@ -54,7 +60,12 @@ export function GameCard({ card, view, isFaceUp = true, onClick, className, isPl
     const style = COLOR_STYLES[visibleColor];
 
     return (
-      <div className={cn('w-full h-full rounded-lg border-4 flex flex-col items-center justify-center p-2 transition-all', style)}>
+      <div className={cn('w-full h-full rounded-lg border-4 flex flex-col items-center justify-center p-2 transition-all relative', style)}>
+        {view === 'player' && isPlayable && onPlayBlind && (
+            <button onClick={handleBlindPlayClick} className="absolute top-1 right-1 z-10 p-1 rounded-full bg-black/30 hover:bg-black/50 transition-colors">
+                <EyeOff className="w-4 h-4 text-white" />
+            </button>
+        )}
         <ColorIcon color={visibleColor} className="w-1/2 h-1/2" />
         <span className="font-bold text-sm uppercase tracking-wider mt-1">{visibleColor}</span>
       </div>

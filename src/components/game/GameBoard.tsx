@@ -2,7 +2,6 @@
 import { useState, useEffect } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { useGameLogic } from '@/lib/game-logic';
-import type { GameState } from '@/lib/types';
 import { PlayerHand } from './PlayerHand';
 import { OpponentHand } from './OpponentHand';
 import { CenterRow } from './CenterRow';
@@ -30,8 +29,7 @@ function GameLoader() {
 
 export function GameBoard() {
   const { state, dispatch, isInitialized } = useGameLogic();
-  const [selectedCardIndex, setSelectedCardIndex] = useState<number | null>(null);
-
+  
   if (!isInitialized) {
     return <GameLoader />;
   }
@@ -40,10 +38,6 @@ export function GameBoard() {
     dispatch({ type: 'PLAY_CARD', payload: { handIndex, isBlind } });
   };
   
-  const handleSelectCardToPlay = (handIndex: number) => {
-    setSelectedCardIndex(handIndex);
-  }
-
   const handleFlipCard = (centerIndex: number) => {
     dispatch({ type: 'FLIP_CARD', payload: { centerIndex } });
   };
@@ -77,7 +71,7 @@ export function GameBoard() {
 
       <PlayerHand 
         player={player} 
-        onPlayCard={handleSelectCardToPlay} 
+        onPlayCard={handlePlayCard} 
         isCurrentPlayer={isPlayerTurn} 
         canPlay={canPlay}
       />
@@ -85,9 +79,6 @@ export function GameBoard() {
       <ActionPanel 
         state={state} 
         onEndTurn={handleEndTurn} 
-        onPlayCard={handlePlayCard}
-        selectedCardIndex={selectedCardIndex}
-        setSelectedCardIndex={setSelectedCardIndex}
       />
       
       <AnimatePresence>
