@@ -1,5 +1,6 @@
+// src/components/game/GameBoard.tsx
 'use client';
-import { useReducer, useEffect } from 'react';
+import { useReducer, useEffect, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { gameReducer, getInitialGameState } from '@/lib/game-logic';
 import { PlayerHand } from './PlayerHand';
@@ -11,11 +12,13 @@ import { EndGameDialog } from './EndGameDialog';
 import { RoundResultToast } from './RoundResultToast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useDoc, useFirestore, useUser, useMemoFirebase } from '@/firebase';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, serverTimestamp, deleteDoc } from 'firebase/firestore';
 import type { Match, GameState } from '@/lib/types';
-import { setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
+import { setDocumentNonBlocking, deleteDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 import { Loader2 } from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../ui/card';
+import { Button } from '../ui/button';
+import { useRouter } from 'next/navigation';
 
 function GameLoader() {
   return (
@@ -40,6 +43,8 @@ interface GameBoardProps {
 export function GameBoard({ matchId }: GameBoardProps) {
   const { user } = useUser();
   const firestore = useFirestore();
+  const router = useRouter();
+  const [isCancelling, setIsCancelling] = useState(false);
   
   const matchRef = useMemoFirebase(() => 
     doc(firestore, 'matches', matchId),
@@ -53,9 +58,21 @@ export function GameBoard({ matchId }: GameBoardProps) {
   // Effect to sync remote match state to local reducer
   useEffect(() => {
     if (match && match.gameState) {
-      dispatch({ type: 'SET_GAME_STATE', payload: match.gameState });
+      // Initialize reducer only once with the first valid data from firestore
+      if(!state.phase) {
+          dispatch({ type: 'SET_GAME_STATE', payload: match.gameState });
+      } else if (match.status === 'PLAYING') {
+          // Sync subsequent states only if the game is active
+          // This avoids local state being overwritten by a stale firestore state during transitions (like round end)
+          const localPlayer = state.players.find(p => p.id === user?.uid);
+          const remotePlayerInLocalState = match.gameState.players.find(p => p.id === localPlayer?.id);
+          
+          if(localPlayer && remotePlayerInLocalState && localPlayer.discardPile.length < remotePlayerInLocalState.discardPile.length) {
+             dispatch({ type: 'SET_GAME_STATE', payload: match.gameState });
+          }
+      }
     }
-  }, [match]);
+  }, [match, state.phase, user]);
   
   // Effect to sync local state back to Firestore
   useEffect(() => {
@@ -76,8 +93,19 @@ export function GameBoard({ matchId }: GameBoardProps) {
     }
   }, [state, matchRef, user]);
 
+  const handleCancelMatch = async () => {
+    setIsCancelling(true);
+    try {
+        await deleteDoc(matchRef);
+        router.push('/');
+    } catch(e) {
+        console.error("Error cancelling match", e);
+        setIsCancelling(false);
+    }
+  };
 
-  if (isLoadingMatch || !state.phase) {
+
+  if (isLoadingMatch || !match) {
     return <GameLoader />;
   }
 
@@ -101,9 +129,19 @@ export function GameBoard({ matchId }: GameBoardProps) {
                         </div>
                     )}
                 </CardContent>
+                <CardFooter>
+                    <Button variant="outline" onClick={handleCancelMatch} disabled={isCancelling} className="w-full">
+                        {isCancelling ? <Loader2 className="animate-spin" /> : "Cancelar Partida"}
+                    </Button>
+                </CardFooter>
             </Card>
         </div>
     )
+  }
+
+  // If match is loaded but gameState hasn't been initialized in the reducer yet
+  if (!state.phase) {
+    return <GameLoader />;
   }
 
 
