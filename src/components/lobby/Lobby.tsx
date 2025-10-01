@@ -10,7 +10,6 @@ import { useUser, useFirestore, useCollection, useMemoFirebase, FirestorePermiss
 import { collection, addDoc, serverTimestamp, query, where, limit, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 import type { Match } from '@/lib/types';
-import { getInitialGameState } from '@/lib/game-logic';
 import { Loader2 } from 'lucide-react';
 
 function generateJoinCode() {
@@ -96,6 +95,12 @@ export function Lobby() {
              return;
         }
 
+        if (match.player1Id === user.uid) {
+            setError("No puedes unirte a tu propia partida.");
+            setIsLoading(false);
+            return;
+        }
+
         await handleJoinMatch(matchDoc.id);
 
     } catch (e) {
@@ -111,7 +116,8 @@ export function Lobby() {
 
     const matchRef = doc(firestore, 'matches', matchId);
     
-    // Player 2 just sets their ID and status. Game state is initialized by Player 1.
+    // Player 2 just sets their ID and status. 
+    // The GameBoard component for Player 1 will be responsible for creating the initial game state.
     const updateData = {
         player2Id: user.uid,
         status: 'PLAYING' as const,
