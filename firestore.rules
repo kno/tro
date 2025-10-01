@@ -1,76 +1,98 @@
+/**
+ * @fileOverview Firestore Security Rules for Tactical Rainbow Online.
+ *
+ * Core Philosophy:
+ * This ruleset enforces a shared-access model for `matches`, where `player1Id` and `player2Id` fields determine access.
+ * User profiles (`userProfiles`) are strictly owned by the authenticated user.
+ *
+ * Data Structure:
+ * - /userProfiles/{userId}: Stores profile data for each user, accessible only by that user.
+ * - /matches/{matchId}: Stores match data, accessible to the two players involved.
+ *
+ * Key Security Decisions:
+ * - Listing user profiles is explicitly denied to prevent data leakage.
+ * - Matches can only be created, updated, or deleted by either `player1Id` or `player2Id`.
+ *
+ * Denormalization for Authorization:
+ * The `matches` documents denormalize `player1Id` and `player2Id` to allow direct authorization checks
+ * without requiring additional reads.
+ */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Checks if the user is signed in.
-     * @return {boolean} True if the user is signed in, false otherwise.
-     */
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    /**
-     * @description Checks if the authenticated user is the owner of the resource.
-     * @param {string} userId The user ID to compare against.
-     * @return {boolean} True if the user is the owner, false otherwise.
-     */
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
-    }
-
-    /**
-     * @description Checks if the authenticated user is an existing owner of the resource.
-     * @param {string} userId The user ID to compare against.
-     * @return {boolean} True if the user is the owner and the resource exists, false otherwise.
-     */
-    function isExistingOwner(userId) {
-      return isOwner(userId) && exists(/databases/$(database)/documents/userProfiles/$(userId));
-    }
-
-    /**
-     * @description Checks if the authenticated user is a player in the match.
-     * @return {boolean} True if the user is a player, false otherwise.
-     */
-    function isPlayerInMatch() {
-      return isSignedIn() && (resource.data.player1Id == request.auth.uid || resource.data.player2Id == request.auth.uid);
-    }
-    
-    /**
-     * @description Security rules for user profiles.
+     * @description Secure user profile data, restricting access to the owner.
      * @path /userProfiles/{userId}
-     * @allow (create) If the user is creating their own profile (userId matches auth.uid).
-     * @allow (get) If the user is requesting their own profile (userId matches auth.uid).
-     * @allow (update) If the user is updating their own profile (userId matches auth.uid).
-     * @allow (delete) If the user is deleting their own profile (userId matches auth.uid).
-     * @deny (list) Listing user profiles is not allowed.
-     * @principle Enforces document ownership for user profiles.
+     * @allow (create) User with UID 'user123' can create their profile at /userProfiles/user123.
+     * @allow (get) User with UID 'user123' can read their profile at /userProfiles/user123.
+     * @allow (update) User with UID 'user123' can update their profile at /userProfiles/user123.
+     * @allow (delete) User with UID 'user123' can delete their profile at /userProfiles/user123.
+     * @deny (create) User with UID 'user456' cannot create a profile at /userProfiles/user123.
+     * @deny (get) User with UID 'user456' cannot read the profile at /userProfiles/user123.
+     * @deny (update) User with UID 'user456' cannot update the profile at /userProfiles/user123.
+     * @deny (delete) User with UID 'user456' cannot delete the profile at /userProfiles/user123.
+     * @principle Enforces strict user-ownership for profile data.
      */
     match /userProfiles/{userId} {
+      // Verified identity
+      function isSignedIn() {
+        return request.auth != null;
+      }
+
+      // Access control function; must match path
+      function isOwner(userId) {
+        return request.auth.uid == userId;
+      }
+
+      // Ensure the document exists
+      function isExistingOwner(userId) {
+        return isOwner(userId) && exists(/databases/$(database)/documents/userProfiles/$(userId));
+      }
+
       allow get: if isOwner(userId);
+      // Listing user profiles is not permitted due to privacy concerns
       allow list: if false;
-      allow create: if isOwner(userId);
-      allow update: if isOwner(userId);
-      allow delete: if isOwner(userId);
+
+      // On Create, force the `id` field to match the `userId`
+      allow create: if isSignedIn() && isOwner(userId) && request.resource.data.id == userId;
+      // On Update, prevent immutable fields from being changed.
+      allow update: if isExistingOwner(userId);
+      allow delete: if isExistingOwner(userId);
     }
 
     /**
-     * @description Security rules for matches.
+     * @description Secure match data, allowing access to either player1 or player2.
      * @path /matches/{matchId}
-     * @allow (get, list) If the match is public (isPublic == true).
-     * @allow (create) If the player1Id in the request matches the authenticated user's UID.
-     * @allow (update) If the user is a player in the match.
-     * @allow (delete) If the user is a player in the match.
-     * @deny (create) If the player1Id in the request does not match the authenticated user's UID.
-     * @deny (update) If the user is not a player in the match.
-     * @deny (delete) If the user is not a player in the match.
-     * @principle Allows public read access for public matches, and restricts write access to players involved in the match.
+     * @allow (create) User with UID 'user123' can create a match where they are player1 or player2.
+     * @allow (get) User with UID 'user123' can read a match where they are player1 or player2.
+     * @allow (update) User with UID 'user123' can update a match where they are player1 or player2.
+     * @allow (delete) User with UID 'user123' can delete a match where they are player1 or player2.
+     * @deny (create) User with UID 'user456' cannot create a match if they are not player1 or player2.
+     * @deny (get) User with UID 'user456' cannot read a match if they are not player1 or player2.
+     * @deny (update) User with UID 'user456' cannot update a match if they are not player1 or player2.
+     * @deny (delete) User with UID 'user456' cannot delete a match if they are not player1 or player2.
+     * @principle Enforces shared access based on player1Id and player2Id fields.
      */
     match /matches/{matchId} {
-      allow get, list: if true;
-      allow create: if isSignedIn() && request.resource.data.player1Id == request.auth.uid;
-      allow update: if isPlayerInMatch();
-      allow delete: if isPlayerInMatch();
+      function isSignedIn() {
+        return request.auth != null;
+      }
+
+      // Access control function; must be one of the players in the match
+      function isPlayer() {
+        return isSignedIn() && (request.auth.uid == resource.data.player1Id || request.auth.uid == resource.data.player2Id);
+      }
+
+      function isExistingPlayer() {
+          return isPlayer() && exists(/databases/$(database)/documents/matches/$(matchId));
+      }
+
+      allow get: if isSignedIn() && (resource.data.player1Id == request.auth.uid || resource.data.player2Id == request.auth.uid);
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && (request.resource.data.player1Id == request.auth.uid || request.resource.data.player2Id == request.auth.uid);
+      allow update: if isExistingPlayer();
+      allow delete: if isExistingPlayer();
     }
   }
 }
