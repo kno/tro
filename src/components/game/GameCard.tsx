@@ -45,12 +45,15 @@ export function GameCard({ card, view, isFaceUp = true, onClick, onPlayBlind, cl
   const visibleColor = getVisibleColor();
   
   const handleBlindPlayClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
+    e.stopPropagation(); // Prevent the main card click from firing
     if(onPlayBlind) onPlayBlind();
+  }
+  
+  const handleCardClick = () => {
+    if(onClick) onClick();
   }
 
   const cardContent = () => {
-    // For deck, or if a center card is meant to be face down but we don't have that info yet.
     if (view === 'deck' || (view === 'center' && isFaceUp === false)) {
       return <CardBack />;
     }
@@ -60,34 +63,42 @@ export function GameCard({ card, view, isFaceUp = true, onClick, onPlayBlind, cl
 
     return (
       <div className={cn('w-full h-full rounded-lg border-4 flex flex-col items-center justify-center p-2 transition-all relative', style)}>
-        {view === 'player' && isPlayable && onPlayBlind && (
-            <button onClick={handleBlindPlayClick} className="absolute top-1 right-1 z-10 p-1 rounded-full bg-black/30 hover:bg-black/50 transition-colors">
-                <EyeOff className="w-4 h-4 text-white" />
-            </button>
-        )}
         <ColorIcon color={visibleColor} className="w-1/2 h-1/2" />
         <span className="font-bold text-sm uppercase tracking-wider mt-1">{visibleColor}</span>
       </div>
     );
   };
+  
+  if (view === 'player' && isPlayable) {
+     return (
+        <div 
+            onClick={handleCardClick}
+            className={cn(
+                "relative aspect-[2.5/3.5] rounded-lg shadow-lg transition-transform duration-300 cursor-pointer",
+                "hover:scale-105 hover:-translate-y-2 ring-4 ring-transparent hover:ring-accent",
+                className
+            )}
+        >
+            {cardContent()}
+             {onPlayBlind && (
+                <button 
+                    onClick={handleBlindPlayClick} 
+                    className="absolute top-1 right-1 z-10 p-1 rounded-full bg-black/30 hover:bg-black/50 transition-colors"
+                    aria-label="Jugar a ciegas"
+                >
+                    <EyeOff className="w-4 h-4 text-white" />
+                </button>
+            )}
+        </div>
+     )
+  }
 
-  const cardElement = (
+  return (
       <div className={cn(
-        "aspect-[2.5/3.5] rounded-lg shadow-lg transition-transform duration-300",
-        isPlayable && "cursor-pointer hover:scale-105 hover:-translate-y-2 ring-4 ring-accent",
+        "aspect-[2.5/3.5] rounded-lg shadow-lg",
         className
       )}>
         {cardContent()}
       </div>
   );
-
-  if (onClick) {
-    return (
-      <button onClick={onClick} className="focus:outline-none appearance-none block" disabled={!isPlayable}>
-        {cardElement}
-      </button>
-    );
-  }
-
-  return cardElement;
 }
