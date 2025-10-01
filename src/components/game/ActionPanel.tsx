@@ -1,6 +1,5 @@
 import type { GameState } from '@/lib/types';
 import { Button } from '@/components/ui/button';
-import { AIAdvisor } from './AIAdvisor';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 
 interface ActionPanelProps {
@@ -12,7 +11,7 @@ interface ActionPanelProps {
 }
 
 export function ActionPanel({ state, onEndTurn, onPlayCard, selectedCardIndex, setSelectedCardIndex }: ActionPanelProps) {
-  const { turnState, canFlipInitially, playedCardsThisTurn, players, currentPlayerIndex, centerRow } = state;
+  const { turnState, playedCardsThisTurn, players, currentPlayerIndex } = state;
   const isCurrentPlayerTurn = true; // Simplified for local play
   const canPlay = isCurrentPlayerTurn && turnState === 'AWAITING_PLAY' && playedCardsThisTurn < 3;
   
@@ -33,11 +32,6 @@ export function ActionPanel({ state, onEndTurn, onPlayCard, selectedCardIndex, s
         >
           Terminar Turno
         </Button>
-        <AIAdvisor 
-          hand={players[currentPlayerIndex].hand} 
-          centerRow={centerRow} 
-          disabled={!isCurrentPlayerTurn}
-        />
 
         <AlertDialog open={selectedCardIndex !== null} onOpenChange={(isOpen) => !isOpen && setSelectedCardIndex(null)}>
           <AlertDialogContent>
