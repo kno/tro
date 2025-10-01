@@ -44,9 +44,7 @@ export function Lobby() {
     setIsLoading(true);
     setError(null);
 
-    const player1 = { id: user.uid, name: user.displayName || `Jugador ${user.uid.substring(0,5)}` };
-
-    const newMatch: Omit<Match, 'id' | 'gameState'> & { gameState: null } = {
+    const newMatch: Omit<Match, 'id'> = {
         player1Id: user.uid,
         player2Id: '',
         status: 'LOBBY',
@@ -113,6 +111,7 @@ export function Lobby() {
 
     const matchRef = doc(firestore, 'matches', matchId);
     
+    // Player 2 just sets their ID and status. Game state is initialized by Player 1.
     const updateData = {
         player2Id: user.uid,
         status: 'PLAYING' as const,
@@ -186,7 +185,7 @@ export function Lobby() {
                     ) : publicMatches && publicMatches.length > 0 ? (
                         publicMatches.map(match => (
                             <div key={match.id} className="flex justify-between items-center p-2 rounded-md bg-muted/50">
-                                <span>Partida de {(match as any).player1?.name || 'un jugador'}</span>
+                                <span>Partida de { 'un jugador'}</span>
                                 <Button size="sm" onClick={() => handleJoinMatch(match.id!)} disabled={isLoading || match.player1Id === user?.uid}>
                                     {isLoading ? <Loader2 className="animate-spin" /> : "Unirse"}
                                 </Button>
