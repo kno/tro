@@ -20,7 +20,7 @@ export interface Player {
   discardPile: Card[];
 }
 
-export type TurnState = 'PLAYING';
+export type TurnState = 'PLAYING' | 'ROUND_OVER';
 export type RowState = 'VALID' | 'DUPLICATE_COLOR' | 'BLACK_CARD';
 export type GamePhase = 'LOBBY' | 'PLAYING' | 'GAME_OVER';
 export type RoundEndReason = 'DUPLICATE_COLOR' | 'BLACK_CARD' | 'RAINBOW_COMPLETE' | null;
@@ -49,7 +49,7 @@ export interface Match {
     status: 'LOBBY' | 'PLAYING' | 'GAME_OVER';
     isPublic: boolean;
     joinCode?: string;
-    gameState: GameState;
+    gameState: GameState | null; // Can be null during setup
     createdAt: any; // Firestore ServerTimestamp
     updatedAt: any; // Firestore ServerTimestamp
 }

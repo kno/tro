@@ -7,10 +7,10 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '../ui/switch';
 import { useUser, useFirestore, useCollection, useMemoFirebase, FirestorePermissionError, errorEmitter } from '@/firebase';
-import { collection, addDoc, serverTimestamp, query, where, limit, getDocs, doc, setDoc } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, query, where, limit, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 import type { Match } from '@/lib/types';
-import { getInitialGameState, addSecondPlayer } from '@/lib/game-logic';
+import { getInitialGameState } from '@/lib/game-logic';
 import { Loader2 } from 'lucide-react';
 
 function generateJoinCode() {
@@ -44,17 +44,15 @@ export function Lobby() {
     setIsLoading(true);
     setError(null);
 
-    const player1 = { id: user.uid, name: user.displayName || `Jugador ${user.uid.substring(0,5)}`, hand: [], discardPile: [] };
-    
-    const initialGameState = getInitialGameState([player1]);
+    const player1 = { id: user.uid, name: user.displayName || `Jugador ${user.uid.substring(0,5)}` };
 
-    const newMatch: Omit<Match, 'id'> = {
+    const newMatch: Omit<Match, 'id' | 'gameState'> & { gameState: null } = {
         player1Id: user.uid,
         player2Id: '',
         status: 'LOBBY',
         isPublic,
         joinCode: isPublic ? '' : generateJoinCode(),
-        gameState: initialGameState,
+        gameState: null,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
     };
@@ -100,7 +98,7 @@ export function Lobby() {
              return;
         }
 
-        await handleJoinMatch(matchDoc.id, match);
+        await handleJoinMatch(matchDoc.id);
 
     } catch (e) {
         console.error("Error joining game: ", e);
@@ -109,24 +107,19 @@ export function Lobby() {
     }
   };
 
-  const handleJoinMatch = async (matchId: string, matchData: Match) => {
-    if (!user || !firestore || matchData.player1Id === user.uid) return;
+  const handleJoinMatch = async (matchId: string) => {
+    if (!user || !firestore) return;
     setIsLoading(true);
-
-    const player2 = { id: user.uid, name: user.displayName || `Jugador ${user.uid.substring(0,5)}`, hand: [], discardPile: [] };
-    
-    const newGameState = addSecondPlayer(matchData.gameState, player2);
 
     const matchRef = doc(firestore, 'matches', matchId);
     
     const updateData = {
         player2Id: user.uid,
         status: 'PLAYING' as const,
-        gameState: newGameState,
         updatedAt: serverTimestamp(),
     };
 
-    setDoc(matchRef, updateData, { merge: true })
+    updateDoc(matchRef, updateData)
       .then(() => {
         router.push(`/game/${matchId}`);
       })
@@ -139,7 +132,7 @@ export function Lobby() {
             requestResourceData: updateData,
           })
         );
-        setError("No se pudo unir a la partida.");
+        setError("No se pudo unir a la partida. Asegúrate de no unirte a tu propia partida.");
         setIsLoading(false);
       });
   }
@@ -193,8 +186,8 @@ export function Lobby() {
                     ) : publicMatches && publicMatches.length > 0 ? (
                         publicMatches.map(match => (
                             <div key={match.id} className="flex justify-between items-center p-2 rounded-md bg-muted/50">
-                                <span>Partida de {match.gameState?.players?.[0]?.name || 'un jugador'}</span>
-                                <Button size="sm" onClick={() => handleJoinMatch(match.id!, match)} disabled={isLoading || match.player1Id === user?.uid}>
+                                <span>Partida de {(match as any).player1?.name || 'un jugador'}</span>
+                                <Button size="sm" onClick={() => handleJoinMatch(match.id!)} disabled={isLoading || match.player1Id === user?.uid}>
                                     {isLoading ? <Loader2 className="animate-spin" /> : "Unirse"}
                                 </Button>
                             </div>

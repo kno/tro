@@ -11,7 +11,7 @@ import { RoundResultToast } from './RoundResultToast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useDoc, useFirestore, useUser, useMemoFirebase } from '@/firebase';
 import { doc, serverTimestamp, deleteDoc } from 'firebase/firestore';
-import type { Match, GameState } from '@/lib/types';
+import type { Match, GameState, Player } from '@/lib/types';
 import { setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 import { Loader2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../ui/card';
@@ -52,7 +52,18 @@ export function GameBoard({ matchId }: GameBoardProps) {
 
   const { data: match, isLoading: isLoadingMatch } = useDoc<Match>(matchRef);
 
-  const [state, dispatch] = useReducer(gameReducer, {} as GameState);
+  const [state, dispatch] = useReducer(gameReducer, null, () => ({} as GameState));
+  
+  // Effect to initialize game when player 2 joins
+  useEffect(() => {
+    if (match && match.status === 'PLAYING' && !match.gameState && user?.uid === match.player1Id) {
+      const player1: Player = { id: match.player1Id, name: user.displayName || `Jugador ${user.uid.substring(0,5)}`, hand: [], discardPile: [] };
+      // This is a placeholder for player 2's name. It should be updated with the actual name when available.
+      const player2: Player = { id: match.player2Id, name: `Jugador ${match.player2Id.substring(0,5)}`, hand: [], discardPile: [] };
+      const initialState = getInitialGameState([player1, player2]);
+      setDocumentNonBlocking(matchRef!, { gameState: initialState }, { merge: true });
+    }
+  }, [match, user, matchRef]);
 
   // Effect to sync remote match state to local reducer
   useEffect(() => {
@@ -106,7 +117,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
     return <GameLoader />;
   }
 
-  if (match?.status === 'LOBBY') {
+  if (match?.status === 'LOBBY' || !match.gameState) {
     return (
         <div className="w-full max-w-2xl mx-auto">
             <Card>

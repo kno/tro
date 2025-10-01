@@ -53,28 +53,18 @@ export function getInitialGameState(players: Player[]): GameState {
     player.discardPile = [];
   });
   
-  // Deal cards only if the game is actually starting (2 players)
-  if (players.length === 2) {
-    players.forEach(player => {
-      for (let i = 0; i < HAND_SIZE; i++) {
-        if (initialDeck.length > 0) {
-          player.hand.push(initialDeck.pop()!);
-        }
+  // Deal cards
+  players.forEach(player => {
+    for (let i = 0; i < HAND_SIZE; i++) {
+      if (initialDeck.length > 0) {
+        player.hand.push(initialDeck.pop()!);
       }
-    });
-  } else {
-    // If only one player, deal cards but wait for the second player
-    const player1 = players[0];
-     for (let i = 0; i < HAND_SIZE; i++) {
-        if (initialDeck.length > 0) {
-          player1.hand.push(initialDeck.pop()!);
-        }
-      }
-  }
+    }
+  });
 
 
   return {
-    phase: players.length === 2 ? 'PLAYING': 'LOBBY',
+    phase: 'PLAYING',
     players: players,
     deck: initialDeck,
     centerRow: [],
@@ -87,37 +77,6 @@ export function getInitialGameState(players: Player[]): GameState {
     isTie: false,
     lastActionLog: 'La partida ha comenzado.',
     turnTimer: TURN_TIME_SECONDS
-  };
-}
-
-// Adds a second player and deals cards to both, starting the game.
-export function addSecondPlayer(currentState: GameState, player2: Player): GameState {
-  if (currentState.players.length >= 2) {
-    return currentState;
-  }
-  
-  const player1 = currentState.players[0];
-  const players = [player1, player2];
-  const deck = [...currentState.deck];
-
-  // Clear any pre-dealt hands and deal fresh to both
-  player1.hand = [];
-  player2.hand = [];
-
-  for (let i = 0; i < HAND_SIZE * 2; i++) {
-    const playerIndex = i % 2;
-    if (deck.length > 0) {
-      players[playerIndex].hand.push(deck.pop()!);
-    }
-  }
-
-  return {
-    ...currentState,
-    phase: 'PLAYING',
-    players,
-    deck,
-    currentPlayerIndex: Math.random() < 0.5 ? 0 : 1, // Randomize start
-    lastActionLog: `${player2.name} se ha unido. ¡La partida comienza!`,
   };
 }
 
