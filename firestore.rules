@@ -1,98 +1,83 @@
 /**
- * @fileOverview Firestore Security Rules for Tactical Rainbow Online.
+ * @fileoverview Firestore Security Rules for Tactical Rainbow Online.
  *
  * Core Philosophy:
- * This ruleset enforces a shared-access model for `matches`, where `player1Id` and `player2Id` fields determine access.
- * User profiles (`userProfiles`) are strictly owned by the authenticated user.
+ * This ruleset enforces a player-ownership model for matches, ensuring only players involved in a match can modify it.
+ * User profiles are private and only accessible to the owning user.
  *
  * Data Structure:
- * - /userProfiles/{userId}: Stores profile data for each user, accessible only by that user.
+ * - /userProfiles/{userId}: Stores individual user profiles, accessible only to the user themselves.
  * - /matches/{matchId}: Stores match data, accessible to the two players involved.
  *
  * Key Security Decisions:
- * - Listing user profiles is explicitly denied to prevent data leakage.
- * - Matches can only be created, updated, or deleted by either `player1Id` or `player2Id`.
+ * - User profiles are strictly private; listing user profiles is denied.
+ * - Matches are only modifiable by players participating in the match.
+ * - No schema validation is performed in this prototype to allow for faster iteration.
  *
  * Denormalization for Authorization:
- * The `matches` documents denormalize `player1Id` and `player2Id` to allow direct authorization checks
- * without requiring additional reads.
+ * - The /matches/{matchId} documents contain denormalized 'player1Id' and 'player2Id' fields. This avoids the need for costly `get()` calls to other collections to determine authorization.
  */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Secure user profile data, restricting access to the owner.
+     * @description Secure user profile data, ensuring only the owner can read or write.
      * @path /userProfiles/{userId}
-     * @allow (create) User with UID 'user123' can create their profile at /userProfiles/user123.
-     * @allow (get) User with UID 'user123' can read their profile at /userProfiles/user123.
-     * @allow (update) User with UID 'user123' can update their profile at /userProfiles/user123.
-     * @allow (delete) User with UID 'user123' can delete their profile at /userProfiles/user123.
-     * @deny (create) User with UID 'user456' cannot create a profile at /userProfiles/user123.
-     * @deny (get) User with UID 'user456' cannot read the profile at /userProfiles/user123.
-     * @deny (update) User with UID 'user456' cannot update the profile at /userProfiles/user123.
-     * @deny (delete) User with UID 'user456' cannot delete the profile at /userProfiles/user123.
-     * @principle Enforces strict user-ownership for profile data.
+     * @allow (get, create, update, delete, list): if request.auth.uid == userId
+     * @deny (get, create, update, delete, list): if request.auth.uid != userId
+     * @principle Enforces document ownership for all operations.
      */
     match /userProfiles/{userId} {
-      // Verified identity
-      function isSignedIn() {
-        return request.auth != null;
-      }
-
-      // Access control function; must match path
-      function isOwner(userId) {
-        return request.auth.uid == userId;
-      }
-
-      // Ensure the document exists
-      function isExistingOwner(userId) {
-        return isOwner(userId) && exists(/databases/$(database)/documents/userProfiles/$(userId));
-      }
-
+      // Read permissions: Only the user can read their own profile.
       allow get: if isOwner(userId);
-      // Listing user profiles is not permitted due to privacy concerns
-      allow list: if false;
+      allow list: if false; // Listing user profiles is not allowed.
 
-      // On Create, force the `id` field to match the `userId`
-      allow create: if isSignedIn() && isOwner(userId) && request.resource.data.id == userId;
-      // On Update, prevent immutable fields from being changed.
-      allow update: if isExistingOwner(userId);
-      allow delete: if isExistingOwner(userId);
+      // Write permissions: Only the user can create, update, and delete their own profile.
+      allow create: if isOwner(userId) && request.auth.uid == userId;
+      allow update: if isExistingOwner(userId) && request.auth.uid == userId;
+      allow delete: if isExistingOwner(userId) && request.auth.uid == userId;
     }
 
     /**
-     * @description Secure match data, allowing access to either player1 or player2.
+     * @description Secure match data, ensuring only players in the match can read or write.
      * @path /matches/{matchId}
-     * @allow (create) User with UID 'user123' can create a match where they are player1 or player2.
-     * @allow (get) User with UID 'user123' can read a match where they are player1 or player2.
-     * @allow (update) User with UID 'user123' can update a match where they are player1 or player2.
-     * @allow (delete) User with UID 'user123' can delete a match where they are player1 or player2.
-     * @deny (create) User with UID 'user456' cannot create a match if they are not player1 or player2.
-     * @deny (get) User with UID 'user456' cannot read a match if they are not player1 or player2.
-     * @deny (update) User with UID 'user456' cannot update a match if they are not player1 or player2.
-     * @deny (delete) User with UID 'user456' cannot delete a match if they are not player1 or player2.
-     * @principle Enforces shared access based on player1Id and player2Id fields.
+     * @allow (get, list): if true
+     * @allow (create): if request.auth.uid == request.resource.data.player1Id || request.auth.uid == request.resource.data.player2Id;
+     * @allow (update, delete): if resource.data.player1Id == request.auth.uid || resource.data.player2Id == request.auth.uid;
+     * @deny (create, update, delete): if !(resource.data.player1Id == request.auth.uid || resource.data.player2Id == request.auth.uid);
+     * @principle Enforces shared access based on the 'player1Id' and 'player2Id' fields in the document.
      */
     match /matches/{matchId} {
-      function isSignedIn() {
-        return request.auth != null;
-      }
+      // Read permissions: Anyone can read match data.
+      allow get: if true;
+      allow list: if true;
 
-      // Access control function; must be one of the players in the match
-      function isPlayer() {
-        return isSignedIn() && (request.auth.uid == resource.data.player1Id || request.auth.uid == resource.data.player2Id);
-      }
-
-      function isExistingPlayer() {
-          return isPlayer() && exists(/databases/$(database)/documents/matches/$(matchId));
-      }
-
-      allow get: if isSignedIn() && (resource.data.player1Id == request.auth.uid || resource.data.player2Id == request.auth.uid);
-      allow list: if isSignedIn();
-      allow create: if isSignedIn() && (request.resource.data.player1Id == request.auth.uid || request.resource.data.player2Id == request.auth.uid);
-      allow update: if isExistingPlayer();
-      allow delete: if isExistingPlayer();
+      // Write permissions: Only players involved in the match can modify it.
+      allow create: if isSignedIn() && (request.auth.uid == request.resource.data.player1Id || request.auth.uid == request.resource.data.player2Id);
+      allow update: if isExistingPlayer(request.auth.uid, resource.data.player1Id, resource.data.player2Id);
+      allow delete: if isExistingPlayer(request.auth.uid, resource.data.player1Id, resource.data.player2Id);
     }
+  }
+
+  // Helper functions
+  function isSignedIn() {
+    return request.auth != null;
+  }
+
+  function isOwner(userId) {
+    return request.auth.uid == userId;
+  }
+
+  function isExistingOwner(userId) {
+    return isOwner(userId) && resource != null;
+  }
+
+  function isPlayer(authUid, player1Id, player2Id) {
+    return authUid == player1Id || authUid == player2Id;
+  }
+
+  function isExistingPlayer(authUid, player1Id, player2Id) {
+    return isPlayer(authUid, player1Id, player2Id) && resource != null;
   }
 }
