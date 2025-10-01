@@ -10,7 +10,7 @@ import { ActionPanel } from './ActionPanel';
 import { EndGameDialog } from './EndGameDialog';
 import { RoundResultToast } from './RoundResultToast';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useDoc, useFirestore, useUser } from '@/firebase';
+import { useDoc, useFirestore, useUser, useMemoFirebase } from '@/firebase';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import type { Match, GameState } from '@/lib/types';
 import { setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
@@ -40,7 +40,11 @@ interface GameBoardProps {
 export function GameBoard({ matchId }: GameBoardProps) {
   const { user } = useUser();
   const firestore = useFirestore();
-  const matchRef = doc(firestore, 'matches', matchId);
+  
+  const matchRef = useMemoFirebase(() => 
+    doc(firestore, 'matches', matchId),
+    [firestore, matchId]
+  );
 
   const { data: match, isLoading: isLoadingMatch } = useDoc<Match>(matchRef);
 
@@ -56,7 +60,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
   // Effect to sync local state back to Firestore
   useEffect(() => {
     // Only run if the state is initialized and the user is a player
-    if (!state.phase || !user || !state.players.find(p => p.id === user.uid)) return;
+    if (!state.phase || !user || !state.players.find(p => p.id === user.uid) || !matchRef) return;
 
     // Determine if the current user is the one who should be taking action
     const isCurrentUserTurn = state.players[state.currentPlayerIndex]?.id === user.uid;
