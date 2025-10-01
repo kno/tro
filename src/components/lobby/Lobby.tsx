@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '../ui/switch';
-import { useUser, useFirestore, useCollection, useMemoFirebase, errorEmitter, FirestorePermissionError } from '@/firebase';
+import { useUser, useFirestore, useCollection, useMemoFirebase, FirestorePermissionError, errorEmitter } from '@/firebase';
 import { collection, addDoc, serverTimestamp, query, where, limit, getDocs, doc, setDoc } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 import type { Match } from '@/lib/types';
@@ -40,7 +40,7 @@ export function Lobby() {
   const { data: publicMatches, isLoading: isLoadingPublicMatches } = useCollection<Match>(publicMatchesQuery);
 
   const handleCreateGame = async () => {
-    if (!user) return;
+    if (!user || !firestore) return;
     setIsLoading(true);
     setError(null);
 
@@ -78,7 +78,7 @@ export function Lobby() {
   };
 
   const handleJoinWithCode = async () => {
-    if (!user || !joinCode) return;
+    if (!user || !joinCode || !firestore) return;
     setIsLoading(true);
     setError(null);
     try {
@@ -110,12 +110,11 @@ export function Lobby() {
   };
 
   const handleJoinMatch = async (matchId: string, matchData: Match) => {
-    if (!user || matchData.player1Id === user.uid) return;
+    if (!user || !firestore || matchData.player1Id === user.uid) return;
     setIsLoading(true);
 
     const player2 = { id: user.uid, name: user.displayName || `Jugador ${user.uid.substring(0,5)}`, hand: [], discardPile: [] };
     
-    // Instead of creating a new game state, we add the second player to the existing one.
     const newGameState = addSecondPlayer(matchData.gameState, player2);
 
     const matchRef = doc(firestore, 'matches', matchId);
