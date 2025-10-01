@@ -10,7 +10,7 @@ import { useUser, useFirestore, useCollection, useMemoFirebase, errorEmitter, Fi
 import { collection, addDoc, serverTimestamp, query, where, limit, getDocs, doc, setDoc } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 import type { Match } from '@/lib/types';
-import { getInitialGameState } from '@/lib/game-logic';
+import { getInitialGameState, addSecondPlayer } from '@/lib/game-logic';
 import { Loader2 } from 'lucide-react';
 
 function generateJoinCode() {
@@ -29,12 +29,12 @@ export function Lobby() {
   const router = useRouter();
 
   const publicMatchesQuery = useMemoFirebase(() => 
-    query(
+    firestore ? query(
         collection(firestore, 'matches'), 
         where('isPublic', '==', true),
         where('status', '==', 'LOBBY'),
         limit(10)
-    ), 
+    ) : null,
   [firestore]);
   
   const { data: publicMatches, isLoading: isLoadingPublicMatches } = useCollection<Match>(publicMatchesQuery);
@@ -48,7 +48,7 @@ export function Lobby() {
     
     const initialGameState = getInitialGameState([player1]);
 
-    const newMatch: Match = {
+    const newMatch: Omit<Match, 'id'> = {
         player1Id: user.uid,
         player2Id: '',
         status: 'LOBBY',
@@ -114,14 +114,15 @@ export function Lobby() {
     setIsLoading(true);
 
     const player2 = { id: user.uid, name: user.displayName || `Jugador ${user.uid.substring(0,5)}`, hand: [], discardPile: [] };
-    const players = [matchData.gameState.players[0], player2];
-    const newGameState = getInitialGameState(players);
+    
+    // Instead of creating a new game state, we add the second player to the existing one.
+    const newGameState = addSecondPlayer(matchData.gameState, player2);
 
     const matchRef = doc(firestore, 'matches', matchId);
     
     const updateData = {
         player2Id: user.uid,
-        status: 'PLAYING' as 'PLAYING',
+        status: 'PLAYING' as const,
         gameState: newGameState,
         updatedAt: serverTimestamp(),
     };
@@ -194,8 +195,8 @@ export function Lobby() {
                         publicMatches.map(match => (
                             <div key={match.id} className="flex justify-between items-center p-2 rounded-md bg-muted/50">
                                 <span>Partida de {match.gameState?.players?.[0]?.name || 'un jugador'}</span>
-                                <Button size="sm" onClick={() => handleJoinMatch(match.id, match)} disabled={isLoading || match.player1Id === user?.uid}>
-                                    {isLoading && !publicMatches.some(m => m.id === match.id) ? <Loader2 className="animate-spin" /> : "Unirse"}
+                                <Button size="sm" onClick={() => handleJoinMatch(match.id!, match)} disabled={isLoading || match.player1Id === user?.uid}>
+                                    {isLoading ? <Loader2 className="animate-spin" /> : "Unirse"}
                                 </Button>
                             </div>
                         ))

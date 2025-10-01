@@ -51,12 +51,27 @@ export function getInitialGameState(players: Player[]): GameState {
   players.forEach(player => {
     player.hand = [];
     player.discardPile = [];
-    for (let i = 0; i < HAND_SIZE; i++) {
-      if (initialDeck.length > 0) {
-        player.hand.push(initialDeck.pop()!);
-      }
-    }
   });
+  
+  // Deal cards only if the game is actually starting (2 players)
+  if (players.length === 2) {
+    players.forEach(player => {
+      for (let i = 0; i < HAND_SIZE; i++) {
+        if (initialDeck.length > 0) {
+          player.hand.push(initialDeck.pop()!);
+        }
+      }
+    });
+  } else {
+    // If only one player, deal cards but wait for the second player
+    const player1 = players[0];
+     for (let i = 0; i < HAND_SIZE; i++) {
+        if (initialDeck.length > 0) {
+          player1.hand.push(initialDeck.pop()!);
+        }
+      }
+  }
+
 
   return {
     phase: players.length === 2 ? 'PLAYING': 'LOBBY',
@@ -72,6 +87,37 @@ export function getInitialGameState(players: Player[]): GameState {
     isTie: false,
     lastActionLog: 'La partida ha comenzado.',
     turnTimer: TURN_TIME_SECONDS
+  };
+}
+
+// Adds a second player and deals cards to both, starting the game.
+export function addSecondPlayer(currentState: GameState, player2: Player): GameState {
+  if (currentState.players.length >= 2) {
+    return currentState;
+  }
+  
+  const player1 = currentState.players[0];
+  const players = [player1, player2];
+  const deck = [...currentState.deck];
+
+  // Clear any pre-dealt hands and deal fresh to both
+  player1.hand = [];
+  player2.hand = [];
+
+  for (let i = 0; i < HAND_SIZE * 2; i++) {
+    const playerIndex = i % 2;
+    if (deck.length > 0) {
+      players[playerIndex].hand.push(deck.pop()!);
+    }
+  }
+
+  return {
+    ...currentState,
+    phase: 'PLAYING',
+    players,
+    deck,
+    currentPlayerIndex: Math.random() < 0.5 ? 0 : 1, // Randomize start
+    lastActionLog: `${player2.name} se ha unido. ¡La partida comienza!`,
   };
 }
 
@@ -130,7 +176,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       const currentPlayer = state.players[state.currentPlayerIndex];
       const cardToPlay = currentPlayer.hand[handIndex];
       
-      if (!cardToPlay || state.turnState !== 'ROUND_OVER' && state.playedCardsThisTurn >= 3) return state;
+      if (!cardToPlay || state.turnState === 'ROUND_OVER' || state.playedCardsThisTurn >= 3) return state;
 
       const newHand = currentPlayer.hand.filter((_, i) => i !== handIndex);
 
@@ -186,8 +232,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       let nextPlayerIndex: number;
       
       const newPlayers = [...state.players];
-      let newCenterRow: CenterRowCard[] = [];
-
+      
       if (state.roundEndReason === 'RAINBOW_COMPLETE') {
         roundWinnerIndex = state.currentPlayerIndex;
         nextPlayerIndex = 1 - roundWinnerIndex; // Opponent starts
@@ -219,7 +264,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         ...state,
         players: newPlayers,
         deck: newDeck,
-        centerRow: newCenterRow,
+        centerRow: [],
         currentPlayerIndex: nextPlayerIndex as 0 | 1,
         turnState: 'PLAYING' as TurnState,
         playedCardsThisTurn: 0,
@@ -284,7 +329,7 @@ function endTurn(state: GameState): GameState {
     turnState: 'PLAYING' as TurnState,
     playedCardsThisTurn: 0,
     lastActionLog: state.lastActionLog.includes('tiempo') ? state.lastActionLog : `${state.players[state.currentPlayerIndex].name} terminó su turno. Turno de ${newPlayers[nextPlayerIndex].name}.`,
-    turnTimer: TURN_TIME_SECONDS
+    turnTimer: TURN_time_SECONDS
   };
 
   if (isGameOver) {
