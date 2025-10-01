@@ -1,30 +1,25 @@
 'use client';
 import type { GameState, Player, Card, Color, CenterRowCard, TurnState, RowState, GamePhase } from './types';
-import { COLORS, RAINBOW_COLORS } from './types';
-import { useReducer, useEffect, useState } from 'react';
-import { doc, setDoc } from 'firebase/firestore';
-import { useFirestore, useUser } from '@/firebase/provider';
-import { setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
-
 
 // --- CONSTANTS ---
 const HAND_SIZE = 3;
-const RAINBOW_SIZE = 6;
 const TURN_TIME_SECONDS = 60;
 
 // --- DECK CREATION ---
-export function createDeck(): Card[] {
+function createDeck(): Card[] {
   const colorCounts: Record<Color, number> = {
     Red: 6, Orange: 6, Yellow: 6, Green: 6, Blue: 6, Indigo: 6, Violet: 6,
     White: 8, Black: 6,
   };
 
   const colors: Color[] = [];
-  for (const color of COLORS) {
+  // Using Object.keys on colorCounts to ensure we iterate through all defined colors
+  (Object.keys(colorCounts) as Color[]).forEach(color => {
     for (let i = 0; i < colorCounts[color]; i++) {
       colors.push(color);
     }
-  }
+  });
+
 
   const frontColors = [...colors];
   const backColors = [...colors].sort(() => 0.5 - Math.random());
@@ -48,13 +43,16 @@ export function createDeck(): Card[] {
 export function getInitialGameState(players: Player[]): GameState {
   const initialDeck = createDeck();
   
-  players.forEach(player => {
-    player.hand = [];
-    player.discardPile = [];
+  // Ensure players array is valid and reset their state
+  const validatedPlayers = players.map(p => {
+      if (!p || !p.id || !p.name) {
+          throw new Error("Invalid player object provided to getInitialGameState");
+      }
+      return { ...p, hand: [], discardPile: [] };
   });
   
   // Deal cards
-  players.forEach(player => {
+  validatedPlayers.forEach(player => {
     for (let i = 0; i < HAND_SIZE; i++) {
       if (initialDeck.length > 0) {
         player.hand.push(initialDeck.pop()!);
@@ -65,7 +63,7 @@ export function getInitialGameState(players: Player[]): GameState {
 
   return {
     phase: 'PLAYING',
-    players: players,
+    players: validatedPlayers,
     deck: initialDeck,
     centerRow: [],
     currentPlayerIndex: Math.random() < 0.5 ? 0 : 1,
@@ -100,7 +98,7 @@ function checkRowState(centerRow: CenterRowCard[]): { state: RowState; color?: C
 
 function isRainbowComplete(centerRow: CenterRowCard[]): boolean {
   const uniqueColors = new Set(centerRow.map(c => c.frontColor).filter(c => c !== 'White'));
-  return uniqueColors.size >= RAINBOW_SIZE;
+  return uniqueColors.size >= 6;
 }
 
 // --- REDUCER ---
@@ -263,6 +261,17 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 
 
 function endTurn(state: GameState): GameState {
+  if (state.playedCardsThisTurn === 0) {
+    // Cannot end turn if no cards were played.
+    // Maybe flip the cards in the center row?
+    // For now, just return state.
+    // This logic needs to be clarified based on game rules.
+    return {
+      ...state,
+      lastActionLog: 'Debes jugar al menos una carta para terminar tu turno.'
+    };
+  }
+
   const newDeck = [...state.deck];
   const newPlayers = [...state.players];
   let isGameOver = false;
@@ -280,10 +289,15 @@ function endTurn(state: GameState): GameState {
   
   const nextPlayerIndex = (1 - state.currentPlayerIndex) as 0 | 1;
 
+  // Flip all cards in center row to face down for the next player
+  const newCenterRow = state.centerRow.map(card => ({...card, isFaceUp: false}));
+
+
   const updatedState = {
     ...state,
     deck: newDeck,
     players: newPlayers,
+    centerRow: newCenterRow,
     currentPlayerIndex: nextPlayerIndex,
     turnState: 'PLAYING' as TurnState,
     playedCardsThisTurn: 0,
@@ -321,52 +335,4 @@ function checkGameOver(state: GameState): GameState {
       isTie: isTie,
       lastActionLog: isTie ? `¡Empate!` : `Fin de la partida. ¡${winnerId === state.players[0].id ? state.players[0].name : state.players[1].name} gana!`,
     }
-}
-
-
-// --- CUSTOM HOOK ---
-export function useGameLogic(matchId: string, initialMatchState: GameState) {
-  const [state, dispatch] = useReducer(gameReducer, initialMatchState);
-  const firestore = useFirestore();
-  const { user } = useUser();
-  const [isInitialized, setIsInitialized] = useState(false);
-  
-  // Effect to update local state when initialMatchState from props changes
-  useEffect(() => {
-    if (initialMatchState) {
-      dispatch({ type: 'SET_GAME_STATE', payload: initialMatchState });
-      setIsInitialized(true);
-    }
-  }, [initialMatchState]);
-
-
-  // Effect to tick timer
-  useEffect(() => {
-    if (!isInitialized || !user || state.phase !== 'PLAYING' || state.players[state.currentPlayerIndex]?.id !== user.uid) {
-        return;
-    }
-
-    const timer = setInterval(() => {
-      dispatch({ type: 'TICK_TIMER' });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [isInitialized, state.phase, state.currentPlayerIndex, state.turnTimer, state.players, user]);
-
-  // Effect to sync state to Firestore
-  useEffect(() => {
-    if (!isInitialized || !user || !state.phase || !state.players.find(p => p.id === user.uid)) return;
-
-    // Only the current player or a player in a ROUND_OVER state should update the state
-    const isMyTurn = state.players[state.currentPlayerIndex]?.id === user.uid;
-    const isRoundOverForMe = state.turnState === 'ROUND_OVER' && isMyTurn;
-
-    if (isMyTurn || isRoundOverForMe) {
-      const matchRef = doc(firestore, 'matches', matchId);
-      setDocumentNonBlocking(matchRef, { gameState: state }, { merge: true });
-    }
-
-  }, [state, matchId, firestore, isInitialized, user]);
-
-  return { state, dispatch, isInitialized };
 }

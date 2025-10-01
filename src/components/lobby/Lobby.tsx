@@ -11,6 +11,7 @@ import { collection, addDoc, serverTimestamp, query, where, limit, getDocs, doc,
 import { useRouter } from 'next/navigation';
 import type { Match } from '@/lib/types';
 import { Loader2 } from 'lucide-react';
+import { getInitialGameState } from '@/lib/game-logic';
 
 function generateJoinCode() {
   return Math.random().toString(36).substring(2, 8).toUpperCase();
