@@ -261,48 +261,44 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 
 
 function endTurn(state: GameState): GameState {
-  if (state.playedCardsThisTurn === 0) {
-    // Cannot end turn if no cards were played.
-    // Maybe flip the cards in the center row?
-    // For now, just return state.
-    // This logic needs to be clarified based on game rules.
-    return {
-      ...state,
-      lastActionLog: 'Debes jugar al menos una carta para terminar tu turno.'
-    };
-  }
-
   const newDeck = [...state.deck];
   const newPlayers = [...state.players];
+  const currentPlayer = newPlayers[state.currentPlayerIndex];
   let isGameOver = false;
+  let logMessage: string;
 
-  newPlayers.forEach(p => {
-      while (p.hand.length < HAND_SIZE) {
-        if (newDeck.length > 0) {
-            p.hand.push(newDeck.pop()!);
-        } else {
-            isGameOver = true;
-            return;
-        }
+  // Draw cards only if the player played cards this turn
+  if (state.playedCardsThisTurn > 0) {
+    const cardsToDraw = state.playedCardsThisTurn;
+    for (let i = 0; i < cardsToDraw; i++) {
+      if (newDeck.length > 0) {
+        currentPlayer.hand.push(newDeck.pop()!);
+      } else {
+        isGameOver = true;
+        break;
       }
-  })
-  
+    }
+    logMessage = state.lastActionLog.includes('tiempo') ? state.lastActionLog : `${state.players[state.currentPlayerIndex].name} terminó su turno.`;
+  } else {
+    // Player passed the turn
+    logMessage = `${state.players[state.currentPlayerIndex].name} ha pasado el turno.`;
+  }
+
   const nextPlayerIndex = (1 - state.currentPlayerIndex) as 0 | 1;
 
   // Flip all cards in center row to face down for the next player
   const newCenterRow = state.centerRow.map(card => ({...card, isFaceUp: false}));
 
-
-  const updatedState = {
+  const updatedState: GameState = {
     ...state,
     deck: newDeck,
     players: newPlayers,
     centerRow: newCenterRow,
     currentPlayerIndex: nextPlayerIndex,
-    turnState: 'PLAYING' as TurnState,
+    turnState: 'PLAYING',
     playedCardsThisTurn: 0,
-    lastActionLog: state.lastActionLog.includes('tiempo') ? state.lastActionLog : `${state.players[state.currentPlayerIndex].name} terminó su turno. Turno de ${newPlayers[nextPlayerIndex].name}.`,
-    turnTimer: TURN_TIME_SECONDS
+    lastActionLog: `${logMessage} Turno de ${newPlayers[nextPlayerIndex].name}.`,
+    turnTimer: TURN_TIME_SECONDS,
   };
 
   if (isGameOver) {
