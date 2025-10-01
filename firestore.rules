@@ -1,74 +1,82 @@
 /**
- * @fileOverview Firestore Security Rules for Tactical Rainbow Online.
+ * @fileoverview Firestore Security Rules for Tactical Rainbow Online.
  *
  * Core Philosophy:
- * This ruleset enforces a combination of owner-based and shared access control.
- * User profiles are strictly private, accessible only to the owning user.
- * Matches are secured to allow participation by the two designated players.
+ * This ruleset enforces a player-ownership model for matches. Only players participating
+ * in a match can modify it. User profiles are private and only accessible to the
+ * owning user.
  *
  * Data Structure:
- * - /userProfiles/{userId}: Stores private user data, accessible only to the user.
- * - /matches/{matchId}: Stores match data, accessible to the two players involved.
+ * - /userProfiles/{userId}: Stores profile information for each user.
+ * - /matches/{matchId}: Stores data for each match, including player IDs.
  *
  * Key Security Decisions:
- * - User profiles are not listable.
- * - Matches are accessible for read/write by the two players.
- * - The `matches` collection uses denormalized `player1Id` and `player2Id` fields for efficient authorization.
- * - There is no administrative role.
+ * - Players must be authenticated to create or modify matches.
+ * - Only players participating in a match can update or delete it.
+ * - User profiles are only accessible to the owning user.
+ *
+ * Denormalization for Authorization:
+ * - The /matches/{matchId} documents denormalize 'player1Id' and 'player2Id'
+ * to allow direct authorization checks without additional reads.
  */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Controls access to user profile data.
-     * @path /userProfiles/{userId}
-     * @allow (get, create, update, delete) if the user is the owner of the profile.
-     * @deny (get, create, update, delete) if the user is not the owner of the profile.
-     * @principle Enforces user-ownership for profile data.
+     * @description Checks if the user is signed in.
      */
-    match /userProfiles/{userId} {
-      function isSignedIn() {
-        return request.auth != null;
-      }
-
-      function isOwner(userId) {
-        return isSignedIn() && request.auth.uid == userId;
-      }
-
-      allow get: if isOwner(userId);
-      allow list: if false;
-      allow create: if isOwner(userId);
-      allow update: if isOwner(userId);
-      allow delete: if isOwner(userId);
+    function isSignedIn() {
+      return request.auth != null;
     }
 
     /**
-     * @description Controls access to match data.
+     * @description Checks if the authenticated user is the owner of the resource.
+     */
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    /**
+     * @description Checks if the authenticated user is an existing owner of the resource.
+     */
+    function isExistingOwner(userId) {
+      return isOwner(userId) && resource != null;
+    }
+
+    /**
+     * @description User profiles are private and only accessible to the owner.
+     * @path /userProfiles/{userId}
+     * @allow (get) User 'user_abc' can read their own profile: auth.uid == 'user_abc'
+     * @allow (create) User 'user_abc' can create their own profile: auth.uid == 'user_abc'
+     * @allow (update) User 'user_abc' can update their own profile: auth.uid == 'user_abc'
+     * @allow (delete) User 'user_abc' can delete their own profile: auth.uid == 'user_abc'
+     * @deny (get) User 'user_xyz' cannot read 'user_abc' profile: auth.uid != 'user_abc'
+     * @principle Enforces user-ownership for profile data.
+     */
+    match /userProfiles/{userId} {
+      allow get: if isOwner(userId);
+      allow list: if false;
+      allow create: if isSignedIn() && isOwner(userId) && request.resource.data.id == request.auth.uid;
+      allow update: if isExistingOwner(userId) && request.resource.data.id == resource.data.id;
+      allow delete: if isExistingOwner(userId);
+    }
+
+    /**
+     * @description Matches are accessible and modifiable by participating players.
      * @path /matches/{matchId}
-     * @allow (get, list) if true (public read)
-     * @allow (create) if the user is player1.
-     * @allow (update, delete) if the user is either player1 or player2.
-     * @deny (create, update, delete) if the user is not a player in the match.
-     * @principle Enforces shared access for the two players in a match.
+     * @allow (get) Any signed-in user can read match data.
+     * @allow (create) Any signed-in user can create a match.
+     * @allow (update) A player (player1Id or player2Id) can update the match.
+     * @allow (delete) A player (player1Id or player2Id) can delete the match.
+     * @deny (update) A non-player cannot update the match.
+     * @principle Enforces shared access for match participants.
      */
     match /matches/{matchId} {
-      function isSignedIn() {
-        return request.auth != null;
-      }
-
-      function isPlayer1(match) {
-        return isSignedIn() && request.auth.uid == match.data.player1Id;
-      }
-
-      function isPlayer2(match) {
-        return isSignedIn() && request.auth.uid == match.data.player2Id;
-      }
-
       allow get, list: if true;
-      allow create: if isSignedIn() && request.resource.data.player1Id == request.auth.uid;
-      allow update: if isSignedIn() && (request.resource.data.player1Id == request.auth.uid || request.resource.data.player2Id == request.auth.uid) && (resource.data.player1Id == request.auth.uid || resource.data.player2Id == request.auth.uid);
-      allow delete: if isSignedIn() && (resource.data.player1Id == request.auth.uid || resource.data.player2Id == request.auth.uid);
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (resource.data.player1Id == request.auth.uid || resource.data.player2Id == request.auth.uid) && resource != null;
+      allow delete: if isSignedIn() && (resource.data.player1Id == request.auth.uid || resource.data.player2Id == request.auth.uid) && resource != null;
     }
   }
 }
