@@ -17,9 +17,9 @@ export function OpponentHand({ player, isCurrentPlayer }: OpponentHandProps) {
       <CardContent>
         <div className="flex justify-center items-start gap-2 md:gap-4 min-h-[15vh] md:min-h-[20vh]">
           {player.hand.length > 0 ? (
-            player.hand.map((card) => (
+            player.hand.map((card, index) => (
               <GameCard
-                key={card.id}
+                key={`${card.id}-${index}`}
                 card={card}
                 view="opponent"
                 className="w-20 md:w-28"

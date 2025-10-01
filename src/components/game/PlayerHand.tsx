@@ -21,7 +21,7 @@ export function PlayerHand({ player, onPlayCard, isCurrentPlayer, canPlay }: Pla
           {player.hand.length > 0 ? (
             player.hand.map((card, index) => (
               <GameCard
-                key={card.id}
+                key={`${card.id}-${index}`}
                 card={card}
                 view="player"
                 onClick={() => onPlayCard(index, false)}
