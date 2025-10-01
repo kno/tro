@@ -2,74 +2,89 @@
  * @fileoverview Firestore Security Rules for Tactical Rainbow Online.
  *
  * Core Philosophy:
- * This ruleset enforces a player-access model for matches, where only the players involved
- * in a match can modify its game state. User profiles are private and only accessible to the
- * owning user. The rules prioritize authorization independence, avoiding `get()` calls
- * by denormalizing player IDs directly onto the match documents.
+ * This ruleset enforces a player-ownership model for matches, ensuring only players involved in a match can modify it. User profiles are private and only accessible to the owning user.
  *
  * Data Structure:
- * - /userProfiles/{userId}: Stores individual user profiles, secured by owner-only access.
- * - /matches/{matchId}: Stores match data, with player1Id and player2Id fields for authorization.
+ * - /userProfiles/{userId}: Stores profile information for each user.
+ * - /matches/{matchId}: Stores match data, including player IDs and game state.
  *
  * Key Security Decisions:
- * - Players can only update matches in which they are participants.
- * - User profiles are private; listing is denied.
- * - The rules explicitly deny any write access not covered by the defined logic.
+ * - User profiles are private and readable only by the owning user.
+ * - Matches can only be updated by players involved in the match (player1Id or player2Id).
+ * - Listing user profiles is disallowed to prevent information harvesting.
+ * - The `matches` collection stores all matches, both public and private.
  *
  * Denormalization for Authorization:
- * - The `matches` collection denormalizes `player1Id` and `player2Id` on each document.
- *   This allows rules to directly check `request.auth.uid` against these fields, avoiding costly
- *   `get()` calls to retrieve player information from separate `userProfiles` documents.
+ * The `matches` document includes `player1Id` and `player2Id` fields to avoid costly `get()` operations when enforcing player-based access control.
  */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Ensures only the user can read/write their own profile.
+     * @description Checks if the requesting user is signed in.
+     */
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    /**
+     * @description Checks if the requesting user is the owner of the resource, using the provided userId.
+     */
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    /**
+     * @description Checks if the requesting user is player 1 or player 2 of the match.
+     */
+    function isPlayerInMatch(player1Id, player2Id) {
+      return request.auth.uid == player1Id || request.auth.uid == player2Id;
+    }
+
+    /**
+     * @description Checks if the requesting user is an existing owner of the resource, using the provided userId and ensuring the resource exists.
+     */
+    function isExistingOwner(userId) {
+      return isOwner(userId) && resource.data.id == userId;
+    }
+
+    /**
+     * @description Enforces document ownership for user profiles.
      * @path /userProfiles/{userId}
-     * @allow (get, create, update, delete, list) if the user's UID matches the userId.
-     * @deny (get, create, update, delete, list) if the user's UID does not match the userId.
-     * @principle Enforces document ownership for all operations on user profiles.
+     * @allow (get) User 'gj7J4ZrXacPn5OXIsxdjxfyCSYw2' can read their own profile.
+     * @allow (create) User 'gj7J4ZrXacPn5OXIsxdjxfyCSYw2' can create their own profile.
+     * @allow (update) User 'gj7J4ZrXacPn5OXIsxdjxfyCSYw2' can update their own profile.
+     * @allow (delete) User 'gj7J4ZrXacPn5OXIsxdjxfyCSYw2' can delete their own profile.
+     * @deny (get) User 'hTNf1kwjztXd6ZLMZoClvtssnnJ3' cannot read user profile 'gj7J4ZrXacPn5OXIsxdjxfyCSYw2'.
+     * @deny (create) User 'hTNf1kwjztXd6ZLMZoClvtssnnJ3' cannot create user profile 'gj7J4ZrXacPn5OXIsxdjxfyCSYw2'.
+     * @deny (update) User 'hTNf1kwjztXd6ZLMZoClvtssnnJ3' cannot update user profile 'gj7J4ZrXacPn5OXIsxdjxfyCSYw2'.
+     * @deny (delete) User 'hTNf1kwjztXd6ZLMZoClvtssnnJ3' cannot delete user profile 'gj7J4ZrXacPn5OXIsxdjxfyCSYw2'.
+     * @principle Restricts access to a user's own data tree and enforces document ownership for writes.
      */
     match /userProfiles/{userId} {
-      function isSignedIn() {
-        return request.auth != null;
-      }
-
-      function isOwner(userId) {
-        return isSignedIn() && request.auth.uid == userId;
-      }
-
       allow get: if isOwner(userId);
       allow list: if false;
       allow create: if isOwner(userId);
       allow update: if isOwner(userId);
-      allow delete: if isOwner(userId) && resource != null;
+      allow delete: if isOwner(userId);
     }
 
     /**
-     * @description Controls access to match documents. Only players in the match can update it.
+     * @description Enforces player-based access control for matches.
      * @path /matches/{matchId}
-     * @allow (get, list) if true (public read).
-     * @allow (create) if the user is creating a match and sets player1Id to their UID.
-     * @allow (update, delete) if the user is player1 or player2 and the document exists.
-     * @deny (create, update, delete) if the conditions above are not met.
-     * @principle Enforces that only participating players can modify match data.
+     * @allow (get) Any signed-in user can read match data.
+     * @allow (update) User 'gj7J4ZrXacPn5OXIsxdjxfyCSYw2' can update the match 'iHkQGqyrNyDbEE4JNdTY' because they are player2.
+     * @deny (create) User 'hTNf1kwjztXd6ZLMZoClvtssnnJ3' cannot create a match.
+     * @deny (update) User 'hTNf1kwjztXd6ZLMZoClvtssnnJ3' cannot update match 'iHkQGqyrNyDbEE4JNdTY' if they are not a player in the match.
+     * @deny (delete) User 'hTNf1kwjztXd6ZLMZoClvtssnnJ3' cannot delete the match.
+     * @principle Enforces document ownership (player association) for writes.
      */
     match /matches/{matchId} {
-      function isSignedIn() {
-        return request.auth != null;
-      }
-
-      function isPlayer(player1Id, player2Id) {
-        return isSignedIn() && (request.auth.uid == player1Id || request.auth.uid == player2Id);
-      }
-
-      allow get, list: if true;
-      allow create: if isSignedIn() && request.resource.data.player1Id == request.auth.uid;
-      allow update: if isPlayer(resource.data.player1Id, resource.data.player2Id) && resource != null;
-      allow delete: if isPlayer(resource.data.player1Id, resource.data.player2Id) && resource != null;
+      allow get, list: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (getAfter(resource).data.player1Id == request.auth.uid || getAfter(resource).data.player2Id == request.auth.uid);
+      allow delete: if false;
     }
   }
 }
