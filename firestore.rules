@@ -2,91 +2,79 @@
  * @fileoverview Firestore Security Rules for Tactical Rainbow Online.
  *
  * Core Philosophy:
- * This ruleset enforces a player-ownership model for matches, where only players involved in a match
- * can modify its state. User profiles are private and only accessible to the owning user.
+ * This ruleset enforces a player-ownership model for matches, ensuring only players involved in a match can modify it. User profiles are accessible only to the owning user.
  *
  * Data Structure:
- * - /userProfiles/{userId}: Stores user profile information, secured for owner-only access.
- * - /matches/{matchId}: Stores match data, with denormalized player IDs for efficient authorization.
+ * - /userProfiles/{userId}: Stores individual user profile data, with 'userId' matching the Firebase Auth UID.
+ * - /matches/{matchId}: Stores match data, including denormalized 'player1Id' and 'player2Id' fields.
  *
  * Key Security Decisions:
- * - Players can only update a match if they are player1 or player2.
- * - User profiles are private; only the owner can read or write their profile.
- * - Listing all user profiles is disallowed.
+ * - Users can only create, update, and delete their own user profiles. Listing all user profiles is disallowed.
+ * - Matches can be read by anyone, but only players involved in the match can update or delete it.
  *
  * Denormalization for Authorization:
- * - Matches store player1Id and player2Id directly within the document to avoid needing `get()` calls
- *   to a separate user document for authorization.
+ * The 'matches' collection denormalizes 'player1Id' and 'player2Id' on each match document. This enables direct authorization checks against `request.auth.uid` without needing additional reads or complex queries.  For example, to check if a user is a player in a match, the rules can directly evaluate `request.auth.uid == resource.data.player1Id || request.auth.uid == resource.data.player2Id`.
+ *
+ * Structural Segregation:
+ * Public and private matches are differentiated within the same 'matches' collection using the 'isPublic' flag. This simplifies querying for available public games while still enabling secure access control for private matches via `joinCode` (though the joinCode is not validated in these rules).
  */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Checks if the current user is signed in.
-     * @return {boolean} True if the user is signed in, false otherwise.
-     */
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    /**
-     * @description Checks if the current user is the owner of the resource.
-     * @param {string} userId The user ID to compare against the request's auth UID.
-     * @return {boolean} True if the user is the owner, false otherwise.
-     */
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
-    }
-
-    /**
-     * @description Checks if the current user is an existing owner of the resource (i.e. signed in and the owner, and the resource exists).
-     * @param {string} userId The user ID to compare against the resource's UID.
-     * @return {boolean} True if the user is an existing owner, false otherwise.
-     */
-    function isExistingOwner(userId) {
-      return isOwner(userId) && resource != null;
-    }
-
-    /**
-     * @description Rules for user profiles.
+     * @description Allows users to manage their own user profile.
      * @path /userProfiles/{userId}
-     * @allow (create) User gj7J4ZrXacPn5OXIsxdjxfyCSYw2 can create their own profile.
-     * @allow (get) User gj7J4ZrXacPn5OXIsxdjxfyCSYw2 can read their own profile.
-     * @allow (update) User gj7J4ZrXacPn5OXIsxdjxfyCSYw2 can update their own profile.
-     * @allow (delete) User gj7J4ZrXacPn5OXIsxdjxfyCSYw2 can delete their own profile.
-     * @deny (create) User otherId cannot create a profile with userId=gj7J4ZrXacPn5OXIsxdjxfyCSYw2.
-     * @deny (get) User otherId cannot read user gj7J4ZrXacPn5OXIsxdjxfyCSYw2's profile.
-     * @deny (update) User otherId cannot update user gj7J4ZrXacPn5OXIsxdjxfyCSYw2's profile.
-     * @deny (delete) User otherId cannot delete user gj7J4ZrXacPn5OXIsxdjxfyCSYw2's profile.
-     * @principle Enforces document ownership for all operations on user profiles.
+     * @allow (create) - User with UID 'user123' creates their profile at /userProfiles/user123
+     * @allow (update) - User with UID 'user123' updates their profile at /userProfiles/user123
+     * @allow (get) - User with UID 'user123' retrieves their profile at /userProfiles/user123
+     * @deny (create) - User with UID 'user456' attempts to create a profile at /userProfiles/user123
+     * @deny (update) - User with UID 'user456' attempts to update profile at /userProfiles/user123
+     * @deny (list) - Any user attempts to list all profiles
+     * @principle Enforces document ownership for user profiles.
      */
     match /userProfiles/{userId} {
-      allow get: if isOwner(userId);
+      // Helpers
+      function isSignedIn() {
+        return request.auth != null;
+      }
+
+      function isOwner(userId) {
+        return request.auth.uid == userId;
+      }
+      
+      // Permissions
+      allow get: if isSignedIn() && isOwner(userId);
       allow list: if false;
-      allow create: if isOwner(userId) && request.resource.data.id == userId;
-      allow update: if isExistingOwner(userId) && request.resource.data.id == resource.data.id;
-      allow delete: if isExistingOwner(userId);
+      allow create: if isSignedIn() && isOwner(userId);
+      allow update: if isSignedIn() && isOwner(userId);
+      allow delete: if isSignedIn() && isOwner(userId);
     }
 
     /**
-     * @description Rules for matches.
+     * @description Manages access control for match documents. Anyone can read, but only players in the match can modify.
      * @path /matches/{matchId}
-     * @allow (get) Any user can read match data.
-     * @allow (list) Any user can list matches.
-     * @allow (create) Any signed-in user can create a match.
-     * @allow (update) User gj7J4ZrXacPn5OXIsxdjxfyCSYw2 can update the match if they are player1 or player2.
-     * @allow (delete) User gj7J4ZrXacPn5OXIsxdjxfyCSYw2 can delete the match if they are player1 or player2.
-     * @deny (create) User otherId cannot create a match where they are not player1 or player2.
-     * @deny (update) User otherId cannot update match 01smjC31lLBXUmy4PVNr if they are not player1 or player2.
-     * @deny (delete) User otherId cannot delete match 01smjC31lLBXUmy4PVNr if they are not player1 or player2.
-     * @principle Enforces shared access for updates and deletes based on player1Id and player2Id.
+     * @allow (get) - Any user can read match data.
+     * @allow (update) - User with UID 'user123' updates match 'match789' where they are player1 or player2.
+     * @deny (update) - User with UID 'user456' attempts to update match 'match789' where they are not a player.
+     * @principle Allows public reads, restricts writes to match participants.
      */
     match /matches/{matchId} {
+      // Helpers
+      function isSignedIn() {
+        return request.auth != null;
+      }
+
+      function isPlayer(match) {
+        return isSignedIn() && (request.auth.uid == match.player1Id || request.auth.uid == match.player2Id);
+      }
+
+
+      // Permissions
       allow get, list: if true;
       allow create: if isSignedIn();
-      allow update: if isSignedIn() && (resource.data.player1Id == request.auth.uid || resource.data.player2Id == request.auth.uid);
-      allow delete: if isSignedIn() && (resource.data.player1Id == request.auth.uid || resource.data.player2Id == request.auth.uid);
+      allow update: if isSignedIn() && (request.auth.uid == resource.data.player1Id || request.auth.uid == resource.data.player2Id);
+      allow delete: if isSignedIn() && (request.auth.uid == resource.data.player1Id || request.auth.uid == resource.data.player2Id);
     }
   }
 }
