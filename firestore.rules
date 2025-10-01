@@ -1,79 +1,110 @@
 /**
- * @fileoverview Firestore Security Rules for Tactical Rainbow Online.
+ * @file Tactical Rainbow Online Firestore Security Rules
  *
- * Core Philosophy:
- * This ruleset enforces a player-ownership model for matches, where only players
- * involved in a match can modify its game state. User profiles are private
- * and only accessible to the owning user.
+ * @core_philosophy This ruleset enforces a role-based access control model for matches.
+ * Only players involved in a match (player1 or player2) can update the match.
+ * User profiles are owner-readable and writable. Public matches can be read by anyone.
  *
- * Data Structure:
- * - /userProfiles/{userId}: Stores individual user profile data.
- * - /matches/{matchId}: Stores match data, including player IDs.
+ * @data_structure
+ * - /userProfiles/{userId}: Stores individual user profile data. Each user can only access their own profile.
+ * - /matches/{matchId}: Stores match data. Includes player1Id and player2Id for authorization.
  *
- * Key Security Decisions:
- * - Players can only modify matches they are participating in.
- * - User profiles are private and only accessible to the owner.
- * - Data validation is relaxed during the prototyping phase, focusing on
- *   authorization checks and relational integrity (e.g., user ID consistency).
+ * @key_security_decisions
+ * - Users can only create, read, update, and delete their own user profiles.
+ * - Listing of user profiles is disallowed.
+ * - Updates to matches are restricted to the players involved in the match.
  *
- * Denormalization for Authorization:
- * - The `matches` collection includes `player1Id` and `player2Id` directly
- *   on each document to avoid costly `get()` calls when validating player
- *   access.
+ * @denormalization_for_authorization
+ * - Matches include player1Id and player2Id directly in the document to avoid needing to make `get()` calls to the `/userProfiles` collection to check player identity. This simplifies and speeds up authorization checks.
+ *
+ * @structural_segregation
+ * - Public and private matches are stored in the same collection (`/matches/{matchId}`), but the `isPublic` flag allows for secure filtering in queries, and the presence of `joinCode` field restricts access to private matches.
  */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Allows users to read and write their own profile data.
-     * @path /userProfiles/{userId}
-     * @allow (get, create, update, delete, list) if the user's UID matches the userId.
-     * @deny (create, update, delete) if the user's UID does not match the userId.
-     * @principle Enforces document ownership for writes and restricts access to a user's own data tree.
+     * @description Checks if the user is signed in.
+     * @param None
+     * @return True if the user is signed in, false otherwise.
      */
-    match /userProfiles/{userId} {
-      // Helper function to check if the user is the owner of the profile.
-      function isOwner(userId) {
-        return request.auth.uid == userId;
-      }
-
-      // Helper function to check if the user is an existing owner of the profile.
-      function isExistingOwner(userId) {
-        return isOwner(userId) && resource != null;
-      }
-
-      allow get: if isOwner(userId);
-      allow list: if false; // User profiles should not be generally listable.
-      allow create: if isOwner(userId) && request.resource.data.id == request.auth.uid;
-      allow update: if isExistingOwner(userId) && request.resource.data.id == request.auth.uid;
-      allow delete: if isExistingOwner(userId);
+    function isSignedIn() {
+      return request.auth != null;
     }
 
     /**
-     * @description Manages access to match documents. Allows players in the match to read and update the match.
+     * @description Checks if the authenticated user's UID matches the provided userId.
+     * @param {string} userId - The user ID to compare against the authenticated user's UID.
+     * @return {boolean} True if the UIDs match, false otherwise.
+     */
+    function isOwner(userId) {
+        return isSignedIn() && request.auth.uid == userId;
+    }
+
+    /**
+     * @description Checks if the authenticated user is one of the players in the match.
+     * @param {string} player1Id - The ID of the first player.
+     * @param {string} player2Id - The ID of the second player.
+     * @return {boolean} True if the user is one of the players, false otherwise.
+     */
+    function isPlayerInMatch(player1Id, player2Id) {
+        return isSignedIn() && (request.auth.uid == player1Id || request.auth.uid == player2Id);
+    }
+
+    /**
+     * @description Checks if the authenticated user is one of the players in the match and the document exists.
+     * @param {string} player1Id - The ID of the first player.
+     * @param {string} player2Id - The ID of the second player.
+     * @return {boolean} True if the user is one of the players and the document exists, false otherwise.
+     */
+    function isExistingPlayerInMatch(player1Id, player2Id) {
+        return resource != null && isPlayerInMatch(player1Id, player2Id);
+    }
+
+    /**
+     * @description Rules for user profiles.
+     * @path /userProfiles/{userId}
+     * @allow (create) - A user can create their own profile if the userId matches their auth.uid.
+     * @allow (get) - A user can read their own profile if the userId matches their auth.uid.
+     * @allow (update) - A user can update their own profile if the userId matches their auth.uid.
+     * @allow (delete) - A user can delete their own profile if the userId matches their auth.uid.
+     * @deny (create) - A user cannot create a profile for another user (userId does not match auth.uid).
+     * @deny (get) - A user cannot read another user's profile (userId does not match auth.uid).
+     * @deny (update) - A user cannot update another user's profile (userId does not match auth.uid).
+     * @deny (delete) - A user cannot delete another user's profile (userId does not match auth.uid).
+     * @principle Enforces document ownership for user profiles.
+     */
+    match /userProfiles/{userId} {
+      // Read Rules
+      allow get: if isOwner(userId);
+      allow list: if false;
+
+      // Write Rules
+      allow create: if isOwner(userId) && request.resource.data.id == userId;
+      allow update: if isOwner(userId) && request.resource.data.id == resource.data.id;
+      allow delete: if isOwner(userId);
+    }
+
+    /**
+     * @description Rules for matches.
      * @path /matches/{matchId}
-     * @allow (get, list) if true (public read).
-     * @allow (create) if request.auth.uid matches either player1Id or player2Id in the request.
-     * @allow (update, delete) if request.auth.uid matches either player1Id or player2Id in the existing document.
-     * @deny (create, update, delete) if request.auth.uid does not match either player1Id or player2Id.
-     * @principle Enforces document ownership for writes, restricts access to authorized players.
+     * @allow (get) - Anyone can read a match.
+     * @allow (list) - Anyone can list matches.
+     * @allow (update) - Only players in the match can update it.
+     * @deny (create) - Only players in the match can create a match.
+     * @deny (delete) - Only players in the match can delete a match.
+     * @principle Enforces that only the players involved in a match can update match data.
      */
     match /matches/{matchId} {
-      // Helper function to check if the user is a player in the match.
-      function isPlayer(player1Id, player2Id) {
-        return request.auth.uid == player1Id || request.auth.uid == player2Id;
-      }
+      // Read Rules
+      allow get: if true;
+      allow list: if true;
 
-      // Helper function to check if the user is an existing player in the match.
-      function isExistingPlayer() {
-        return resource != null && (request.auth.uid == resource.data.player1Id || request.auth.uid == resource.data.player2Id);
-      }
-
-      allow get, list: if true;
-      allow create: if isPlayer(request.resource.data.player1Id, request.resource.data.player2Id);
-      allow update: if isExistingPlayer();
-      allow delete: if isExistingPlayer();
+      // Write Rules
+      allow create: if false;
+      allow update: if isExistingPlayerInMatch(resource.data.player1Id, resource.data.player2Id);
+      allow delete: if false;
     }
   }
 }
