@@ -131,8 +131,25 @@ export function GameBoard({ matchId }: GameBoardProps) {
   };
 
 
-  if (isLoadingMatch || !match) {
+  if (isLoadingMatch) {
     return <GameLoader />;
+  }
+
+  if (!match) {
+    // This can happen if the match is cancelled/deleted, or the ID is wrong
+    return (
+        <div className="w-full max-w-2xl mx-auto">
+            <Card>
+                <CardHeader>
+                    <CardTitle>Error de Partida</CardTitle>
+                    <CardDescription>No se pudo encontrar la partida. Puede que haya sido cancelada o que el enlace sea incorrecto.</CardDescription>
+                </CardHeader>
+                <CardFooter>
+                    <Button onClick={() => router.push('/')} className="w-full">Volver al Lobby</Button>
+                </CardFooter>
+            </Card>
+        </div>
+    );
   }
 
   if (match.status === 'LOBBY') {
