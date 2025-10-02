@@ -18,6 +18,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { useRouter } from 'next/navigation';
 import { FirestorePermissionError, errorEmitter } from '@/firebase';
 import { isEqual } from 'lodash';
+import { Button } from '@/components/ui/button';
 
 
 function GameLoader() {
