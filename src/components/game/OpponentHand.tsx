@@ -12,7 +12,7 @@ export function OpponentHand({ player, isCurrentPlayer }: OpponentHandProps) {
     <Card className="bg-card/50">
        <CardHeader>
         <CardTitle>{player.name} {isCurrentPlayer && "(Su Turno)"}</CardTitle>
-        <CardDescription>Mano del Oponente (ves el reverso)</CardDescription>
+        <CardDescription>Mano del oponente. Las cartas jugadas en la fila central son visibles para ambos.</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="flex justify-center items-start gap-2 md:gap-4 min-h-[15vh] md:min-h-[20vh]">

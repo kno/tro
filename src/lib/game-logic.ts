@@ -82,22 +82,25 @@ export function getInitialGameState(players: Player[]): GameState {
 function checkRowState(centerRow: CenterRowCard[]): { state: RowState; color?: Color } {
   const visibleColors = new Set<Color>();
   for (const card of centerRow) {
-    const color = card.frontColor;
-    if (color === 'Black') {
-      return { state: 'BLACK_CARD' };
-    }
-    if (color !== 'White') {
-      if (visibleColors.has(color)) {
-        return { state: 'DUPLICATE_COLOR', color };
+    // Only check face-up cards for duplicates/black cards
+    if(card.isFaceUp) {
+      const color = card.frontColor;
+      if (color === 'Black') {
+        return { state: 'BLACK_CARD' };
       }
-      visibleColors.add(color);
+      if (color !== 'White') {
+        if (visibleColors.has(color)) {
+          return { state: 'DUPLICATE_COLOR', color };
+        }
+        visibleColors.add(color);
+      }
     }
   }
   return { state: 'VALID' };
 }
 
 function isRainbowComplete(centerRow: CenterRowCard[]): boolean {
-  const uniqueColors = new Set(centerRow.map(c => c.frontColor).filter(c => c !== 'White'));
+  const uniqueColors = new Set(centerRow.filter(c => c.isFaceUp).map(c => c.frontColor).filter(c => c !== 'White'));
   return uniqueColors.size >= 6;
 }
 
@@ -136,7 +139,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       if (!cardToPlay || state.turnState === 'ROUND_OVER' || state.playedCardsThisTurn >= 3) return state;
 
       const newHand = currentPlayer.hand.filter((_, i) => i !== handIndex);
-
+      
       const cardForCenter: Card = { 
         ...cardToPlay, 
         frontColor: isBlind ? cardToPlay.backColor : cardToPlay.frontColor,
@@ -145,7 +148,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       
       const newCenterRowCard: CenterRowCard = { 
         ...cardForCenter,
-        isFaceUp: true,
+        isFaceUp: true, // Card is always face up when played
       };
 
       const logMessage = isBlind 
@@ -171,15 +174,12 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       if (isRainbowComplete(newState.centerRow)) {
         return { ...newState, turnState: 'ROUND_OVER', roundEndReason: 'RAINBOW_COMPLETE', lastActionLog: `${currentPlayer.name} completó un ARCOÍRIS!` };
       }
-      if (newState.playedCardsThisTurn === 3) {
-        return endTurn(newState);
-      }
       
       return newState;
     }
 
     case 'END_TURN': {
-      return endTurn(state);
+       return endTurn(state);
     }
 
     case 'START_NEXT_ROUND': {
@@ -190,14 +190,17 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       
       const newPlayers = [...state.players];
       
+      // Collect all cards, not just face up ones.
+      const cardsToAward = state.centerRow.map(c => ({...c, isFaceUp: true}));
+
       if (state.roundEndReason === 'RAINBOW_COMPLETE') {
         roundWinnerIndex = state.currentPlayerIndex;
         nextPlayerIndex = 1 - roundWinnerIndex; // Opponent starts
-        newPlayers[roundWinnerIndex].discardPile.push(...state.centerRow.map(c => ({...c, isFaceUp: true})));
+        newPlayers[roundWinnerIndex].discardPile.push(...cardsToAward);
       } else { // DUPLICATE_COLOR or BLACK_CARD
         roundWinnerIndex = 1 - state.currentPlayerIndex;
         nextPlayerIndex = state.currentPlayerIndex; // Loser starts
-        newPlayers[roundWinnerIndex].discardPile.push(...state.centerRow.map(c => ({...c, isFaceUp: true})));
+        newPlayers[roundWinnerIndex].discardPile.push(...cardsToAward);
       }
       const roundWinnerId = newPlayers[roundWinnerIndex].id;
       
@@ -265,7 +268,7 @@ function endTurn(state: GameState): GameState {
   const newPlayers = [...state.players];
   const currentPlayer = newPlayers[state.currentPlayerIndex];
   let isGameOver = false;
-  let logMessage: string;
+  let logMessage = state.lastActionLog;
 
   // Draw cards only if the player played cards this turn
   if (state.playedCardsThisTurn > 0) {
@@ -286,7 +289,8 @@ function endTurn(state: GameState): GameState {
 
   const nextPlayerIndex = (1 - state.currentPlayerIndex) as 0 | 1;
 
-  // Flip all cards in center row to face down for the next player
+  // Flip all cards in center row to face down for the next player,
+  // except for the ones played THIS turn.
   const newCenterRow = state.centerRow.map(card => ({...card, isFaceUp: false}));
 
   const updatedState: GameState = {
