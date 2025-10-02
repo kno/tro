@@ -42,7 +42,7 @@ interface GameBoardProps {
 }
 
 export function GameBoard({ matchId }: GameBoardProps) {
-  console.log(`[GameBoard] Render Start. Match ID: ${matchId}`);
+  console.log('[GameBoard] Render Start. Match ID:', matchId);
   const { user } = useUser();
   const firestore = useFirestore();
   const router = useRouter();
