@@ -1,5 +1,5 @@
 'use client';
-import { useReducer, useEffect, useState } from 'react';
+import { useReducer, useEffect, useState, useRef } from 'react';
 import { gameReducer, getInitialGameState } from '@/lib/game-logic';
 import { PlayerHand } from './PlayerHand';
 import { OpponentHand } from './OpponentHand';
@@ -15,9 +15,10 @@ import type { Match, GameState, Player } from '@/lib/types';
 import { setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 import { Loader2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../ui/card';
-import { Button } from '../ui/button';
 import { useRouter } from 'next/navigation';
 import { FirestorePermissionError, errorEmitter } from '@/firebase';
+import { isEqual } from 'lodash';
+
 
 function GameLoader() {
   return (
@@ -54,6 +55,9 @@ export function GameBoard({ matchId }: GameBoardProps) {
 
   const [state, dispatch] = useReducer(gameReducer, null, () => ({} as GameState));
   
+  // Ref to track if the update is coming from the local client to prevent cycles
+  const localUpdateRef = useRef(false);
+
   // Effect to initialize game when player 2 joins
   useEffect(() => {
     if (match && match.status === 'PLAYING' && !match.gameState && user?.uid === match.player1Id) {
@@ -61,29 +65,42 @@ export function GameBoard({ matchId }: GameBoardProps) {
       // This is a placeholder for player 2's name. It should be updated with the actual name when available.
       const player2: Player = { id: match.player2Id, name: `Jugador ${match.player2Id.substring(0,5)}`, hand: [], discardPile: [] };
       const initialState = getInitialGameState([player1, player2]);
+      localUpdateRef.current = true;
       setDocumentNonBlocking(matchRef!, { gameState: initialState }, { merge: true });
     }
   }, [match, user, matchRef]);
 
   // Effect to sync remote match state to local reducer
   useEffect(() => {
-    if (match && match.gameState && user) {
-      const isPlayer = match.gameState.players.some(p => p.id === user.uid);
-      if (isPlayer) {
-        dispatch({ type: 'SET_GAME_STATE', payload: match.gameState });
-      }
+     if (match && match.gameState && user && !localUpdateRef.current) {
+        const isPlayer = match.gameState.players.some(p => p.id === user.uid);
+        // Only update local state if it's different from remote state to avoid cycles
+        if (isPlayer && !isEqual(state, match.gameState)) {
+            dispatch({ type: 'SET_GAME_STATE', payload: match.gameState });
+        }
     }
-  }, [match, user]);
+    // After a remote update is processed, reset the flag
+    if (localUpdateRef.current) {
+        localUpdateRef.current = false;
+    }
+  }, [match, user, state]);
   
   // Effect to sync local state back to Firestore
   useEffect(() => {
     if (!state.phase || !user || !state.players.find(p => p.id === user.uid) || !matchRef) return;
     
+    // Only update if the state has actually been initialized
+    if (Object.keys(state).length === 0) return;
+
+    // Prevent upload if the local state is the same as the remote one
+    if (match && isEqual(state, match.gameState)) return;
+
     const isMyTurn = state.players[state.currentPlayerIndex]?.id === user.uid;
     const isRoundOver = state.turnState === 'ROUND_OVER';
     
     // Allow update if it's the current user's turn, or if the round just ended (to sync result)
     if (isMyTurn || isRoundOver) {
+      localUpdateRef.current = true;
       const updateData = { 
             gameState: state,
             status: state.phase === 'GAME_OVER' ? 'GAME_OVER' : 'PLAYING' as const,
@@ -91,7 +108,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
       };
       setDocumentNonBlocking(matchRef, updateData, { merge: true });
     }
-  }, [state, matchRef, user]);
+  }, [state, matchRef, user, match]);
 
   const handleCancelMatch = async () => {
     if (!matchRef) return;
