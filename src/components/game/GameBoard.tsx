@@ -10,7 +10,7 @@ import { EndGameDialog } from './EndGameDialog';
 import { RoundResultToast } from './RoundResultToast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useDoc, useFirestore, useUser, useMemoFirebase } from '@/firebase';
-import { doc, serverTimestamp, deleteDoc } from 'firebase/firestore';
+import { doc, serverTimestamp, deleteDoc, updateDoc } from 'firebase/firestore';
 import type { Match, GameState, Player } from '@/lib/types';
 import { setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 import { Loader2 } from 'lucide-react';
@@ -56,50 +56,38 @@ export function GameBoard({ matchId }: GameBoardProps) {
 
   const [state, dispatch] = useReducer(gameReducer, null, () => ({} as GameState));
   
-  // Ref to track if the update is coming from the local client to prevent cycles
   const localUpdateRef = useRef(false);
 
-  // Effect to initialize game when player 2 joins
   useEffect(() => {
-    if (match && match.status === 'PLAYING' && !match.gameState && user?.uid === match.player1Id) {
-      const player1: Player = { id: match.player1Id, name: user.displayName || `Jugador ${user.uid.substring(0,5)}`, hand: [], discardPile: [] };
-      // This is a placeholder for player 2's name. It should be updated with the actual name when available.
-      const player2: Player = { id: match.player2Id, name: `Jugador ${match.player2Id.substring(0,5)}`, hand: [], discardPile: [] };
-      const initialState = getInitialGameState([player1, player2]);
-      localUpdateRef.current = true;
-      setDocumentNonBlocking(matchRef!, { gameState: initialState }, { merge: true });
-    }
-  }, [match, user, matchRef]);
-
-  // Effect to sync remote match state to local reducer
-  useEffect(() => {
-     if (match && match.gameState && user && !localUpdateRef.current) {
+    if (match && user) {
+      if (match.status === 'PLAYING' && !match.gameState && user.uid === match.player1Id) {
+        // Player 1 initializes the game state when player 2 joins.
+        const player1: Player = { id: match.player1Id, name: user.displayName || `Jugador ${user.uid.substring(0,5)}`, hand: [], discardPile: [] };
+        const player2: Player = { id: match.player2Id, name: `Jugador ${match.player2Id.substring(0,5)}`, hand: [], discardPile: [] };
+        const initialState = getInitialGameState([player1, player2]);
+        localUpdateRef.current = true;
+        setDocumentNonBlocking(matchRef!, { gameState: initialState }, { merge: true });
+      } else if (match.gameState) {
+        // Sync remote state to local state, avoiding cycles.
         const isPlayer = match.gameState.players.some(p => p.id === user.uid);
-        // Only update local state if it's different from remote state to avoid cycles
-        if (isPlayer && !isEqual(state, match.gameState)) {
+        if (isPlayer && !localUpdateRef.current && !isEqual(state, match.gameState)) {
             dispatch({ type: 'SET_GAME_STATE', payload: match.gameState });
         }
+        if (localUpdateRef.current) {
+            localUpdateRef.current = false;
+        }
+      }
     }
-    // After a remote update is processed, reset the flag
-    if (localUpdateRef.current) {
-        localUpdateRef.current = false;
-    }
-  }, [match, user, state]);
+  }, [match, user, matchRef, state]);
   
-  // Effect to sync local state back to Firestore
   useEffect(() => {
     if (!state.phase || !user || !state.players.find(p => p.id === user.uid) || !matchRef) return;
     
-    // Only update if the state has actually been initialized
-    if (Object.keys(state).length === 0) return;
-
-    // Prevent upload if the local state is the same as the remote one
     if (match && isEqual(state, match.gameState)) return;
 
     const isMyTurn = state.players[state.currentPlayerIndex]?.id === user.uid;
     const isRoundOver = state.turnState === 'ROUND_OVER';
     
-    // Allow update if it's the current user's turn, or if the round just ended (to sync result)
     if (isMyTurn || isRoundOver) {
       localUpdateRef.current = true;
       const updateData = { 
@@ -130,13 +118,11 @@ export function GameBoard({ matchId }: GameBoardProps) {
         });
   };
 
-
   if (isLoadingMatch) {
     return <GameLoader />;
   }
 
   if (!match) {
-    // This can happen if the match is cancelled/deleted, or the ID is wrong
     return (
         <div className="w-full max-w-2xl mx-auto">
             <Card>
@@ -182,7 +168,6 @@ export function GameBoard({ matchId }: GameBoardProps) {
     )
   }
 
-  // If match is loaded but gameState hasn't been initialized in the reducer yet
   if (!state.phase || !user || !match.gameState) {
     return <GameLoader />;
   }
@@ -246,3 +231,4 @@ export function GameBoard({ matchId }: GameBoardProps) {
     </div>
   );
 }
+    
