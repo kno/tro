@@ -58,7 +58,6 @@ export function GameBoard({ matchId }: GameBoardProps) {
   
   // Ref to track if the update is coming from the local client to prevent cycles
   const localUpdateRef = useRef(false);
-  const isMyTurnRef = useRef(false);
 
   // Effect to initialize game when player 2 joins
   useEffect(() => {
@@ -98,7 +97,6 @@ export function GameBoard({ matchId }: GameBoardProps) {
     if (match && isEqual(state, match.gameState)) return;
 
     const isMyTurn = state.players[state.currentPlayerIndex]?.id === user.uid;
-    isMyTurnRef.current = isMyTurn; // Update ref
     const isRoundOver = state.turnState === 'ROUND_OVER';
     
     // Allow update if it's the current user's turn, or if the round just ended (to sync result)
@@ -137,7 +135,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
     return <GameLoader />;
   }
 
-  if (match?.status === 'LOBBY' || !match.gameState) {
+  if (match.status === 'LOBBY') {
     return (
         <div className="w-full max-w-2xl mx-auto">
             <Card>
@@ -168,7 +166,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
   }
 
   // If match is loaded but gameState hasn't been initialized in the reducer yet
-  if (!state.phase || !user) {
+  if (!state.phase || !user || !match.gameState) {
     return <GameLoader />;
   }
 
