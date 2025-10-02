@@ -42,15 +42,16 @@ interface GameBoardProps {
 }
 
 export function GameBoard({ matchId }: GameBoardProps) {
+  console.log(`[GameBoard] Render Start. Match ID: ${matchId}`);
   const { user } = useUser();
   const firestore = useFirestore();
   const router = useRouter();
   const [isCancelling, setIsCancelling] = useState(false);
   
-  const matchRef = useMemoFirebase(() => 
-    firestore ? doc(firestore, 'matches', matchId) : null,
-    [firestore, matchId]
-  );
+  const matchRef = useMemoFirebase(() => {
+    console.log('[GameBoard] Memoizing matchRef.');
+    return firestore ? doc(firestore, 'matches', matchId) : null;
+  },[firestore, matchId]);
 
   const { data: match, isLoading: isLoadingMatch } = useDoc<Match>(matchRef);
 
@@ -58,44 +59,55 @@ export function GameBoard({ matchId }: GameBoardProps) {
   
   const localUpdateRef = useRef(false);
 
+  // Effect to sync remote state (from Firestore) to local state (useReducer)
   useEffect(() => {
+    console.log('[GameBoard] Remote-Sync-Effect: Running.');
+    console.log('[GameBoard] Remote-Sync-Effect: Current match data:', match);
+    console.log('[GameBoard] Remote-Sync-Effect: Current user:', user);
+
     if (match && user) {
       if (match.status === 'PLAYING' && !match.gameState && user.uid === match.player1Id) {
-        // Player 1 initializes the game state when player 2 joins.
+        console.log('[GameBoard] Remote-Sync-Effect: Player 1 is initializing game state.');
         const player1: Player = { id: match.player1Id, name: user.displayName || `Jugador ${user.uid.substring(0,5)}`, hand: [], discardPile: [] };
-        // We need player2's name. For now, use a placeholder.
-        // In a real app, you might fetch a user profile for player2Id.
         const player2: Player = { id: match.player2Id, name: `Jugador ${match.player2Id.substring(0,5)}`, hand: [], discardPile: [] };
         const initialState = getInitialGameState([player1, player2]);
         localUpdateRef.current = true;
         setDocumentNonBlocking(matchRef!, { gameState: initialState }, { merge: true });
       } else if (match.gameState) {
-        // Sync remote state to local state, but only if they are different.
-        // This check prevents infinite loops.
         const isPlayerInGame = match.gameState.players.some(p => p.id === user.uid);
         if (isPlayerInGame && !localUpdateRef.current && !isEqual(state, match.gameState)) {
+            console.log('[GameBoard] Remote-Sync-Effect: Syncing remote gameState to local state.');
             dispatch({ type: 'SET_GAME_STATE', payload: match.gameState });
         }
         if (localUpdateRef.current) {
+            console.log('[GameBoard] Remote-Sync-Effect: Clearing localUpdateRef flag.');
             localUpdateRef.current = false;
         }
       }
+    } else {
+       console.log('[GameBoard] Remote-Sync-Effect: Skipping due to no match or user.');
     }
   }, [match, user, matchRef, state]);
   
-  // This effect synchronizes local state changes up to Firestore.
+  // Effect to sync local state changes up to Firestore.
   useEffect(() => {
-    // Don't run if state isn't initialized, user is not loaded, or refs are missing
-    if (!state.phase || !user || !state.players?.find(p => p.id === user.uid) || !matchRef) return;
+    console.log('[GameBoard] Local-Sync-Effect: Running.');
+    console.log('[GameBoard] Local-Sync-Effect: Current local state:', state);
+    if (!state.phase || !user || !state.players?.find(p => p.id === user.uid) || !matchRef) {
+      console.log('[GameBoard] Local-Sync-Effect: Skipping, state not ready.');
+      return;
+    };
     
-    // Avoid writing back the state we just received from Firestore
-    if (match && isEqual(state, match.gameState)) return;
+    if (match && isEqual(state, match.gameState)) {
+      console.log('[GameBoard] Local-Sync-Effect: Skipping, local and remote state are identical.');
+      return;
+    }
 
     const isMyTurn = state.players[state.currentPlayerIndex]?.id === user.uid;
     const isRoundOver = state.turnState === 'ROUND_OVER';
     
-    // Only the current player or the player who ended the round should update the state
     if (isMyTurn || isRoundOver) {
+      console.log('[GameBoard] Local-Sync-Effect: Updating Firestore with local state.');
       localUpdateRef.current = true;
       const updateData = { 
             gameState: state,
@@ -103,6 +115,8 @@ export function GameBoard({ matchId }: GameBoardProps) {
             updatedAt: serverTimestamp() 
       };
       setDocumentNonBlocking(matchRef, updateData, { merge: true });
+    } else {
+       console.log('[GameBoard] Local-Sync-Effect: Skipping, not my turn or round not over.');
     }
   }, [state, matchRef, user, match]);
 
@@ -126,12 +140,15 @@ export function GameBoard({ matchId }: GameBoardProps) {
   };
 
   // --- Render Logic ---
+  console.log(`[GameBoard] Render Logic: isLoadingMatch=${isLoadingMatch}, user=${!!user}, match=${!!match}`);
 
   if (isLoadingMatch || !user) {
+    console.log("[GameBoard] Render: Showing GameLoader (isLoadingMatch or !user).");
     return <GameLoader />;
   }
 
   if (!match) {
+    console.log("[GameBoard] Render: Showing 'Match Not Found' error.");
     return (
         <div className="w-full max-w-2xl mx-auto">
             <Card>
@@ -148,6 +165,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
   }
 
   if (match.status === 'LOBBY') {
+    console.log("[GameBoard] Render: Showing 'Lobby / Waiting for Opponent' screen.");
     return (
         <div className="w-full max-w-2xl mx-auto">
             <Card>
@@ -177,8 +195,8 @@ export function GameBoard({ matchId }: GameBoardProps) {
     )
   }
   
-  // After handling LOBBY, if gameState isn't ready, show loader.
   if (!state.phase || !match.gameState) {
+    console.log("[GameBoard] Render: Showing GameLoader (state not initialized or no gameState).");
     return <GameLoader />;
   }
 
@@ -203,6 +221,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
   const opponent = state.players.find(p => p.id !== user.uid);
   
   if (!self || !opponent) {
+    console.log("[GameBoard] Render: Showing 'Player Data Error'.");
     return (
        <div className="flex justify-center items-center h-full text-center text-muted-foreground">
           <p>Error: No se pudieron cargar los datos de los jugadores. Puede que no formes parte de esta partida.</p>
@@ -212,6 +231,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
 
   const isMyTurn = state.players[state.currentPlayerIndex]?.id === self.id;
   const canPlay = isMyTurn && state.turnState === 'PLAYING' && state.playedCardsThisTurn < 3;
+  console.log(`[GameBoard] Render: Game board ready. isMyTurn=${isMyTurn}`);
 
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col gap-4">
