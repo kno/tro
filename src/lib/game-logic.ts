@@ -1,3 +1,4 @@
+
 'use client';
 import type { GameState, Player, Card, Color, CenterRowCard, TurnState, RowState, GamePhase } from './types';
 
@@ -188,18 +189,18 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       let roundWinnerIndex: number;
       let nextPlayerIndex: number;
       
-      const newPlayers = [...state.players];
-      
-      // Collect all cards, not just face up ones.
-      const cardsToAward = state.centerRow.map(c => ({...c, isFaceUp: true}));
+      const newPlayers = JSON.parse(JSON.stringify(state.players));
+      const cardsToAward = state.centerRow.map(c => ({...c, isFaceUp: true} as Card));
 
       if (state.roundEndReason === 'RAINBOW_COMPLETE') {
         roundWinnerIndex = state.currentPlayerIndex;
-        nextPlayerIndex = 1 - roundWinnerIndex; // Opponent starts
+        // The opponent of the winner starts the next round.
+        nextPlayerIndex = 1 - roundWinnerIndex;
         newPlayers[roundWinnerIndex].discardPile.push(...cardsToAward);
       } else { // DUPLICATE_COLOR or BLACK_CARD
         roundWinnerIndex = 1 - state.currentPlayerIndex;
-        nextPlayerIndex = state.currentPlayerIndex; // Loser starts
+        // The player who lost the round starts the next round.
+        nextPlayerIndex = state.currentPlayerIndex;
         newPlayers[roundWinnerIndex].discardPile.push(...cardsToAward);
       }
       const roundWinnerId = newPlayers[roundWinnerIndex].id;
@@ -209,24 +210,28 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       let isGameOver = false;
       
       for (let i = 0; i < newPlayers.length; i++) {
-        while (newPlayers[i].hand.length < HAND_SIZE) {
-          if (newDeck.length > 0) {
-            newPlayers[i].hand.push(newDeck.pop()!);
-          } else {
-            isGameOver = true;
-            break;
+        const player = newPlayers[i];
+        const cardsNeeded = HAND_SIZE - player.hand.length;
+        if (cardsNeeded > 0) {
+          for(let j = 0; j < cardsNeeded; j++) {
+            if (newDeck.length > 0) {
+              player.hand.push(newDeck.pop()!);
+            } else {
+              isGameOver = true;
+              break;
+            }
           }
         }
         if (isGameOver) break;
       }
       
-      const updatedState = {
+      const updatedState: GameState = {
         ...state,
         players: newPlayers,
         deck: newDeck,
-        centerRow: [],
+        centerRow: [], // Clear the center row
         currentPlayerIndex: nextPlayerIndex as 0 | 1,
-        turnState: 'PLAYING' as TurnState,
+        turnState: 'PLAYING',
         playedCardsThisTurn: 0,
         roundEndReason: null,
         roundWinnerId,
@@ -270,29 +275,27 @@ function endTurn(state: GameState): GameState {
   let isGameOver = false;
   let logMessage = state.lastActionLog;
 
-  // Draw cards only if the player played cards this turn
+  // Draw cards if player played, otherwise pass and flip cards
   if (state.playedCardsThisTurn > 0) {
-    const cardsToDraw = state.playedCardsThisTurn;
-    for (let i = 0; i < cardsToDraw; i++) {
-      if (newDeck.length > 0) {
-        currentPlayer.hand.push(newDeck.pop()!);
-      } else {
-        isGameOver = true;
-        break;
+      const cardsToDraw = state.playedCardsThisTurn;
+      for (let i = 0; i < cardsToDraw; i++) {
+        if (newDeck.length > 0) {
+          currentPlayer.hand.push(newDeck.pop()!);
+        } else {
+          isGameOver = true;
+          break;
+        }
       }
-    }
-    logMessage = state.lastActionLog.includes('tiempo') ? state.lastActionLog : `${state.players[state.currentPlayerIndex].name} terminó su turno.`;
+      logMessage = state.lastActionLog.includes('tiempo') ? state.lastActionLog : `${state.players[state.currentPlayerIndex].name} terminó su turno.`;
   } else {
-    // Player passed the turn
-    logMessage = `${state.players[state.currentPlayerIndex].name} ha pasado el turno.`;
+      logMessage = `${state.players[state.currentPlayerIndex].name} ha pasado el turno.`;
   }
 
   const nextPlayerIndex = (1 - state.currentPlayerIndex) as 0 | 1;
 
-  // Flip all cards in center row to face down for the next player,
-  // except for the ones played THIS turn.
+  // Flip all cards in center row to face down for the next player.
   const newCenterRow = state.centerRow.map(card => ({...card, isFaceUp: false}));
-
+  
   const updatedState: GameState = {
     ...state,
     deck: newDeck,
@@ -336,3 +339,5 @@ function checkGameOver(state: GameState): GameState {
       lastActionLog: isTie ? `¡Empate!` : `Fin de la partida. ¡${winnerId === state.players[0].id ? state.players[0].name : state.players[1].name} gana!`,
     }
 }
+
+    

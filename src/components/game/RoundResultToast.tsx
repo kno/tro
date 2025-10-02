@@ -1,3 +1,4 @@
+
 import type { GameState } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,14 +17,19 @@ export function RoundResultToast({ state, onNextRound, currentUserId }: RoundRes
   const { roundEndReason, lastActionLog, players, currentPlayerIndex } = state;
   
   let winnerIndex: number;
+  let nextPlayerToActIndex: number;
+
   if (state.roundEndReason === 'RAINBOW_COMPLETE') {
     winnerIndex = state.currentPlayerIndex;
+    nextPlayerToActIndex = 1 - winnerIndex; // Opponent starts
   } else { // DUPLICATE_COLOR or BLACK_CARD
     winnerIndex = 1 - state.currentPlayerIndex;
+    nextPlayerToActIndex = state.currentPlayerIndex; // Loser starts
   }
   const winner = players[winnerIndex];
+  const nextPlayerToAct = players[nextPlayerToActIndex];
 
-  const isMyTurnToAct = players[currentPlayerIndex].id === currentUserId;
+  const isMyTurnToAct = nextPlayerToAct.id === currentUserId;
 
   return (
      <div className="fixed inset-0 bg-black/60 z-40 flex items-center justify-center">
@@ -43,10 +49,12 @@ export function RoundResultToast({ state, onNextRound, currentUserId }: RoundRes
                     </Button>
                 )}
                 {!isMyTurnToAct && (
-                    <p className="text-sm text-muted-foreground">Esperando a que {players[currentPlayerIndex].name} inicie la siguiente ronda...</p>
+                    <p className="text-sm text-muted-foreground">Esperando a que {nextPlayerToAct.name} inicie la siguiente ronda...</p>
                 )}
             </CardContent>
         </Card>
      </div>
   );
 }
+
+    
