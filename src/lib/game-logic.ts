@@ -270,11 +270,11 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 
 function endTurn(state: GameState): GameState {
   const newDeck = [...state.deck];
-  const newPlayers = [...state.players];
+  const newPlayers = JSON.parse(JSON.stringify(state.players));
   const currentPlayer = newPlayers[state.currentPlayerIndex];
   let isGameOver = false;
   let logMessage = state.lastActionLog;
-  let newCenterRow = state.centerRow;
+  let newCenterRow = [...state.centerRow];
 
   if (state.playedCardsThisTurn > 0) {
       // Player played cards, so they draw back up to HAND_SIZE
@@ -289,7 +289,7 @@ function endTurn(state: GameState): GameState {
       }
       logMessage = state.lastActionLog.includes('tiempo') ? state.lastActionLog : `${currentPlayer.name} terminó su turno.`;
   } else {
-      // Player passed, so all face-up cards in the center are flipped face-down
+      // Player passed, so all cards played in previous turns are flipped face-down
       newCenterRow = state.centerRow.map(card => ({...card, isFaceUp: false}));
       logMessage = `${currentPlayer.name} ha pasado el turno. Las cartas de la fila se han volteado.`;
   }
