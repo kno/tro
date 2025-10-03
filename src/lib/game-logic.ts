@@ -127,7 +127,7 @@ function checkRowState(centerRow: CenterRowCard[]): { state: RowState; color?: C
 
 function isRainbowComplete(centerRow: CenterRowCard[]): boolean {
   const uniqueColors = new Set(centerRow.filter(c => c.isFaceUp).map(c => c.frontColor).filter(c => c !== 'White'));
-  return uniqueColors.size >= 7;
+  return uniqueColors.size >= 6;
 }
 
 
