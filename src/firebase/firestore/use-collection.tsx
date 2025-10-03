@@ -69,6 +69,10 @@ export function useCollection<T = any>(
       return;
     }
 
+    if (!memoizedTargetRefOrQuery.__memo) {
+      throw new Error('useCollection was not passed a properly memoized query. Use useMemoFirebase to memoize the query.');
+    }
+
     setIsLoading(true);
     setError(null);
 
@@ -109,10 +113,6 @@ export function useCollection<T = any>(
 
     return () => unsubscribe();
   }, [memoizedTargetRefOrQuery]); // Re-run if the target query/reference changes.
-  
-  if(memoizedTargetRefOrQuery && !memoizedTargetRefOrQuery.__memo) {
-    throw new Error('useCollection was not passed a properly memoized query. Use useMemoFirebase to memoize the query.');
-  }
 
   return { data, isLoading, error };
 }

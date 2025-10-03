@@ -55,6 +55,10 @@ export function useDoc<T = any>(
       return;
     }
 
+    if (!memoizedDocRef.__memo) {
+      throw new Error('useDoc was not passed a properly memoized document reference. Use useMemoFirebase to memoize the reference.');
+    }
+
     setIsLoading(true);
     setError(null);
 
@@ -88,10 +92,6 @@ export function useDoc<T = any>(
 
     return () => unsubscribe();
   }, [memoizedDocRef]); // Re-run if the memoizedDocRef changes.
-
-  if(memoizedDocRef && !memoizedDocRef.__memo) {
-    throw new Error('useDoc was not passed a properly memoized document reference. Use useMemoFirebase to memoize the reference.');
-  }
 
   return { data, isLoading, error };
 }

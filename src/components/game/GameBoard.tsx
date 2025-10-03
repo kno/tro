@@ -10,13 +10,12 @@ import { ActionPanel } from './ActionPanel';
 import { EndGameDialog } from './EndGameDialog';
 import { RoundResultToast } from './RoundResultToast';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useDoc, useFirestore, useUser, useMemoFirebase } from '@/firebase';
+import { useDoc, useFirestore, useUser, useMemoFirebase, FirestorePermissionError, errorEmitter } from '@/firebase';
 import { doc, serverTimestamp, deleteDoc, updateDoc } from 'firebase/firestore';
 import type { Match, GameState, Player } from '@/lib/types';
 import { Loader2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../ui/card';
 import { useRouter } from 'next/navigation';
-import { FirestorePermissionError, errorEmitter } from '@/firebase';
 import { isEqual } from 'lodash';
 import { Button } from '@/components/ui/button';
 
@@ -48,7 +47,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
 
   const matchRef = useMemoFirebase(() => {
     return firestore ? doc(firestore, 'matches', matchId) : null;
-  },[firestore, matchId]);
+  }, [firestore, matchId]);
 
   const { data: match, isLoading: isLoadingMatch } = useDoc<Match>(matchRef);
 
@@ -60,7 +59,6 @@ export function GameBoard({ matchId }: GameBoardProps) {
 
     const remoteState = match.gameState;
     
-    // Initialize game for player 1 if it hasn't started
     if (match.status === 'PLAYING' && !remoteState && user.uid === match.player1Id) {
       if (!matchRef) return;
       const player1: Player = {
@@ -82,7 +80,6 @@ export function GameBoard({ matchId }: GameBoardProps) {
 
     if (!remoteState) return;
 
-    // Only update local state if it's different from remote state
     if (!isEqual(state, remoteState)) {
       dispatch({ type: 'SET_GAME_STATE', payload: remoteState });
     }
@@ -161,8 +158,6 @@ export function GameBoard({ matchId }: GameBoardProps) {
       opponent: currentUserId ? players.find(p => p.id !== currentUserId) : undefined,
     };
   }, [state.players, currentUserId]);
-
-  // --- Render Logic ---
 
   if (isLoadingMatch || !user) {
     return <GameLoader />;
