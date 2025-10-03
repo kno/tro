@@ -10,16 +10,14 @@ import { EndGameDialog } from './EndGameDialog';
 import { RoundResultToast } from './RoundResultToast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useDoc, useFirestore, useUser, useMemoFirebase } from '@/firebase';
-import { doc, serverTimestamp, deleteDoc } from 'firebase/firestore';
+import { doc, serverTimestamp, deleteDoc, updateDoc } from 'firebase/firestore';
 import type { Match, GameState, Player } from '@/lib/types';
-import { setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 import { Loader2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../ui/card';
 import { useRouter } from 'next/navigation';
 import { FirestorePermissionError, errorEmitter } from '@/firebase';
 import { isEqual } from 'lodash';
 import { Button } from '@/components/ui/button';
-
 
 function GameLoader() {
   return (
@@ -55,23 +53,15 @@ export function GameBoard({ matchId }: GameBoardProps) {
 
   const [state, dispatch] = useReducer(gameReducer, null, () => ({} as GameState));
 
-  const localUpdateRef = useRef(false);
-  const stateRef = useRef<GameState | null>(null);
-
-  useEffect(() => {
-    stateRef.current = state;
-  }, [state]);
-
   // Effect to sync remote state (from Firestore) to local state (useReducer)
   useEffect(() => {
-    if (!match || !user) {
-      return;
-    }
+    if (!match || !user) return;
 
-    if (match.status === 'PLAYING' && !match.gameState && user.uid === match.player1Id) {
-      if (!matchRef) {
-        return;
-      }
+    const remoteState = match.gameState;
+    
+    // Initialize game for player 1 if it hasn't started
+    if (match.status === 'PLAYING' && !remoteState && user.uid === match.player1Id) {
+      if (!matchRef) return;
       const player1: Player = {
         id: match.player1Id,
         name: user.displayName || `Jugador ${user.uid.substring(0, 5)}`,
@@ -85,38 +75,21 @@ export function GameBoard({ matchId }: GameBoardProps) {
         discardPile: [],
       };
       const initialState = getInitialGameState([player1, player2]);
-      localUpdateRef.current = true;
-      setDocumentNonBlocking(matchRef, { gameState: initialState }, { merge: true });
+      updateDoc(matchRef, { gameState: initialState });
       return;
     }
 
-    if (!match.gameState) {
-      return;
-    }
+    if (!remoteState) return;
 
-    const localState = stateRef.current;
-    const isPlayerInGame = match.gameState.players.some(p => p.id === user.uid);
-
-    if (!isPlayerInGame) {
-      return;
+    // Only update local state if it's different from remote state
+    if (!isEqual(state, remoteState)) {
+      dispatch({ type: 'SET_GAME_STATE', payload: remoteState });
     }
+  }, [match, user, matchRef, state]);
 
-    if (localUpdateRef.current) {
-      if (!localState || !isEqual(localState, match.gameState)) {
-        dispatch({ type: 'SET_GAME_STATE', payload: match.gameState });
-      }
-      localUpdateRef.current = false;
-      return;
-    }
-
-    if (!localState || !localState.phase || !isEqual(localState, match.gameState)) {
-      dispatch({ type: 'SET_GAME_STATE', payload: match.gameState });
-    }
-  }, [match, user, matchRef]);
 
   // Effect to sync local state changes up to Firestore.
   useEffect(() => {
-    // Wait until the state is initialized and the user is part of the game.
     if (!state.phase || !user || !state.players?.find(p => p.id === user.uid) || !matchRef) {
       return;
     };
@@ -126,16 +99,24 @@ export function GameBoard({ matchId }: GameBoardProps) {
       return;
     }
 
-    // Set a flag indicating a local update is happening.
-    localUpdateRef.current = true;
     const updateData = {
           gameState: state,
           status: state.phase === 'GAME_OVER' ? 'GAME_OVER' : 'PLAYING' as const,
           updatedAt: serverTimestamp()
     };
-    setDocumentNonBlocking(matchRef, updateData, { merge: true });
 
-  }, [state, matchRef, user, match]);
+    updateDoc(matchRef, updateData).catch(e => {
+        errorEmitter.emit(
+          'permission-error',
+          new FirestorePermissionError({
+            path: `matches/${matchId}`,
+            operation: 'update',
+            requestResourceData: updateData,
+          })
+        );
+    });
+
+  }, [state, matchRef, user, match, matchId]);
 
   const handleCancelMatch = useCallback(async () => {
     if (!matchRef) return;
@@ -189,7 +170,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
 
   if (!match) {
     return (
-        <div className="w-full max-w-2xl mx-auto">
+        <div className="w-full max-w-2xl mx-auto flex items-center justify-center min-h-screen">
             <Card>
                 <CardHeader>
                     <CardTitle>Error de Partida</CardTitle>
@@ -205,7 +186,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
 
   if (match.status === 'LOBBY') {
     return (
-        <div className="w-full max-w-2xl mx-auto">
+        <div className="w-full max-w-2xl mx-auto flex items-center justify-center min-h-screen">
             <Card>
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2"><Loader2 className="animate-spin" /> Esperando Oponente</CardTitle>
@@ -247,6 +228,9 @@ export function GameBoard({ matchId }: GameBoardProps) {
 
   const isMyTurn = state.players[state.currentPlayerIndex]?.id === self.id;
   const canPlay = isMyTurn && state.turnState === 'PLAYING' && state.playedCardsThisTurn < 3;
+  const isRoundOver = state.turnState === 'ROUND_OVER';
+  const playerToActNext = state.roundEndReason === 'RAINBOW_COMPLETE' ? opponent : self;
+
 
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col gap-4">
@@ -270,7 +254,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
         player={self}
       />
       
-      {state.turnState === 'ROUND_OVER' && <RoundResultToast state={state} onNextRound={handleNextRound} currentUserId={user.uid} />}
+      {isRoundOver && <RoundResultToast state={state} onNextRound={handleNextRound} currentUserId={user.uid} />}
       
       <EndGameDialog state={state} onRestart={handleRestart} />
     </div>
