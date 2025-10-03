@@ -59,8 +59,10 @@ export function GameBoard({ matchId }: GameBoardProps) {
 
     const remoteState = match.gameState;
     
+    // Player 1 initializes the game state if it's missing
     if (match.status === 'PLAYING' && !remoteState && user.uid === match.player1Id) {
       if (!matchRef) return;
+      console.log("[GameBoard] Player 1 is initializing the game state.");
       const player1: Player = {
         id: match.player1Id,
         name: user.displayName || `Jugador ${user.uid.substring(0, 5)}`,
@@ -80,7 +82,9 @@ export function GameBoard({ matchId }: GameBoardProps) {
 
     if (!remoteState) return;
 
+    // Only update local state if it's different from remote state to prevent loops
     if (!isEqual(state, remoteState)) {
+      console.log("[GameBoard] Remote state has changed. Syncing to local state.");
       dispatch({ type: 'SET_GAME_STATE', payload: remoteState });
     }
   }, [match, user, matchRef, state]);
@@ -88,13 +92,17 @@ export function GameBoard({ matchId }: GameBoardProps) {
 
   // Effect to sync local state changes up to Firestore.
   useEffect(() => {
+    // Ensure state is initialized, user is present, and they are part of the game.
     if (!state.phase || !user || !state.players?.find(p => p.id === user.uid) || !matchRef) {
       return;
     };
     
+    // Don't update if local state is identical to remote state
     if (match && isEqual(state, match.gameState)) {
       return;
     }
+
+    console.log("[GameBoard] Local state has changed. Syncing to remote state.");
 
     const updateData = {
           gameState: state,

@@ -28,14 +28,12 @@ export interface UseDocResult<T> {
  * React hook to subscribe to a single Firestore document in real-time.
  * Handles nullable references.
  * 
- * IMPORTANT! YOU MUST MEMOIZE the inputted memoizedTargetRefOrQuery or BAD THINGS WILL HAPPEN
- * use useMemo to memoize it per React guidence.  Also make sure that it's dependencies are stable
- * references
- *
+ * IMPORTANT! YOU MUST MEMOIZE the inputted memoizedDocRef or an infinite loop will occur.
+ * Use the `useMemoFirebase` hook to memoize the reference.
  *
  * @template T Optional type for document data. Defaults to any.
- * @param {DocumentReference<DocumentData> | null | undefined} docRef -
- * The Firestore DocumentReference. Waits if null/undefined.
+ * @param {DocumentReference<DocumentData> | null | undefined} memoizedDocRef -
+ * The Firestore DocumentReference, which MUST be memoized. Waits if null/undefined.
  * @returns {UseDocResult<T>} Object with data, isLoading, error.
  */
 export function useDoc<T = any>(
@@ -54,9 +52,17 @@ export function useDoc<T = any>(
       setError(null);
       return;
     }
-
+    
+    // This check is crucial to prevent infinite loops.
     if (!memoizedDocRef.__memo) {
-      throw new Error('useDoc was not passed a properly memoized document reference. Use useMemoFirebase to memoize the reference.');
+      const err = new Error('useDoc was not passed a properly memoized document reference. Use useMemoFirebase to memoize the reference.');
+      // Throw in development for immediate feedback.
+      if (process.env.NODE_ENV === 'development') {
+        throw err;
+      }
+      setError(err);
+      setIsLoading(false);
+      return;
     }
 
     setIsLoading(true);
