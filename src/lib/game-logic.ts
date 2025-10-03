@@ -2,8 +2,8 @@
 'use client';
 import type { GameState, Player, Card, Color, CenterRowCard, TurnState, RowState, GamePhase } from './types';
 import { doc, updateDoc, serverTimestamp, DocumentReference } from 'firebase/firestore';
-import { FirestorePermissionError, errorEmitter } from '@/firebase/errors';
-import { db } from './firebase-client'; // Assuming you have a client-side db export
+import { FirestorePermissionError } from '@/firebase/errors';
+import { errorEmitter } from '@/firebase/error-emitter';
 
 // --- CONSTANTS ---
 const HAND_SIZE = 3;
@@ -383,3 +383,5 @@ function checkGameOver(state: GameState): GameState {
       lastActionLog: isTie ? `¡Empate!` : `Fin de la partida. ¡${winnerId === state.players[0].id ? state.players[0].name : state.players[1].name} gana!`,
     }
 }
+
+    
