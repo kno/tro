@@ -6,17 +6,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '../ui/switch';
-import { useUser, useFirestore, useCollection, useMemoFirebase, FirestorePermissionError, errorEmitter } from '@/firebase';
-import { collection, addDoc, serverTimestamp, query, where, limit, getDocs, doc, updateDoc } from 'firebase/firestore';
+import { useUser } from '@/firebase';
+import { useMatchActions, usePublicMatches } from '@/data';
 import { useRouter } from 'next/navigation';
-import type { Match } from '@/lib/types';
 import { Loader2 } from 'lucide-react';
-import { getInitialGameState } from '@/lib/game-logic';
-
-function generateJoinCode() {
-  return Math.random().toString(36).substring(2, 8).toUpperCase();
-}
-
 
 export function Lobby() {
   const [isPublic, setIsPublic] = useState(true);
@@ -25,70 +18,37 @@ export function Lobby() {
   const [error, setError] = useState<string | null>(null);
   
   const { user } = useUser();
-  const firestore = useFirestore();
   const router = useRouter();
-
-  const publicMatchesQuery = useMemoFirebase(() => 
-    firestore ? query(
-        collection(firestore, 'matches'), 
-        where('isPublic', '==', true),
-        where('status', '==', 'LOBBY'),
-        limit(10)
-    ) : null,
-  [firestore]);
-  
-  const { data: publicMatches, isLoading: isLoadingPublicMatches } = useCollection<Match>(publicMatchesQuery);
+  const { matches: publicMatches, isLoading: isLoadingPublicMatches } = usePublicMatches();
+  const { createMatch, joinMatch, fetchMatchByJoinCode } = useMatchActions();
 
   const handleCreateGame = async () => {
-    if (!user || !firestore) return;
+    if (!user) return;
     setIsLoading(true);
     setError(null);
 
-    const newMatch: Omit<Match, 'id'> = {
-        player1Id: user.uid,
-        player2Id: '',
-        status: 'LOBBY',
-        isPublic,
-        joinCode: isPublic ? '' : generateJoinCode(),
-        gameState: null,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-    };
-
-    addDoc(collection(firestore, 'matches'), newMatch)
-      .then((docRef) => {
-        router.push(`/game/${docRef.id}`);
+    createMatch({ playerId: user.uid, isPublic })
+      .then(({ matchId }) => {
+        router.push(`/game/${matchId}`);
       })
-      .catch((err) => {
-        errorEmitter.emit(
-          'permission-error',
-          new FirestorePermissionError({
-            path: 'matches',
-            operation: 'create',
-            requestResourceData: newMatch,
-          })
-        );
+      .catch(() => {
         setError('No se pudo crear la partida.');
         setIsLoading(false);
       });
   };
 
   const handleJoinWithCode = async () => {
-    if (!user || !joinCode || !firestore) return;
+    if (!user || !joinCode) return;
     setIsLoading(true);
     setError(null);
     try {
-        const q = query(collection(firestore, "matches"), where("joinCode", "==", joinCode), limit(1));
-        const querySnapshot = await getDocs(q);
+        const match = await fetchMatchByJoinCode(joinCode);
 
-        if (querySnapshot.empty) {
+        if (!match) {
             setError("No se encontró ninguna partida con ese código.");
             setIsLoading(false);
             return;
         }
-        
-        const matchDoc = querySnapshot.docs[0];
-        const match = matchDoc.data() as Match;
 
         if (match.status !== 'LOBBY') {
              setError("Esta partida ya ha comenzado.");
@@ -102,7 +62,7 @@ export function Lobby() {
             return;
         }
 
-        await handleJoinMatch(matchDoc.id);
+        await handleJoinMatch(match.id);
 
     } catch (e) {
         console.error("Error joining game: ", e);
@@ -112,32 +72,13 @@ export function Lobby() {
   };
 
   const handleJoinMatch = async (matchId: string) => {
-    if (!user || !firestore) return;
+    if (!user) return;
     setIsLoading(true);
-
-    const matchRef = doc(firestore, 'matches', matchId);
-    
-    // Player 2 just sets their ID and status. 
-    // The GameBoard component for Player 1 will be responsible for creating the initial game state.
-    const updateData = {
-        player2Id: user.uid,
-        status: 'PLAYING' as const,
-        updatedAt: serverTimestamp(),
-    };
-
-    updateDoc(matchRef, updateData)
+    joinMatch({ matchId, playerId: user.uid })
       .then(() => {
         router.push(`/game/${matchId}`);
       })
-      .catch((err) => {
-        errorEmitter.emit(
-          'permission-error',
-          new FirestorePermissionError({
-            path: `matches/${matchId}`,
-            operation: 'update',
-            requestResourceData: updateData,
-          })
-        );
+      .catch(() => {
         setError("No se pudo unir a la partida. Asegúrate de no unirte a tu propia partida.");
         setIsLoading(false);
       });
