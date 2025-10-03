@@ -51,12 +51,12 @@ export function GameBoard({ matchId }: GameBoardProps) {
 
   const { data: match, isLoading: isLoadingMatch } = useDoc<Match>(matchRef);
 
-  const [state, dispatch] = useReducer(gameReducer, {} as GameState);
+  const [state, dispatch] = useReducer(gameReducer, match?.gameState ?? getInitialGameState([]));
 
   // Effect to sync remote state (from Firestore) to local state (useReducer)
   useEffect(() => {
     if (!match || !user) return;
-
+    
     const remoteState = match.gameState;
     
     // Player 1 initializes the game state if it's missing
@@ -81,27 +81,25 @@ export function GameBoard({ matchId }: GameBoardProps) {
     }
 
     if (!remoteState) return;
-
-    // Only update local state if it's different from remote state to prevent loops
+    
     if (!isEqual(state, remoteState)) {
       console.log("[GameBoard] Remote state has changed. Syncing to local state.");
       dispatch({ type: 'SET_GAME_STATE', payload: remoteState });
     }
+    
   }, [match, user, matchRef, state]);
 
 
   // Effect to sync local state changes up to Firestore.
   useEffect(() => {
-    // Ensure state is initialized, user is present, and they are part of the game.
     if (!state.phase || !user || !state.players?.find(p => p.id === user.uid) || !matchRef) {
       return;
     };
     
-    // Don't update if local state is identical to remote state
     if (match && isEqual(state, match.gameState)) {
       return;
     }
-
+    
     console.log("[GameBoard] Local state has changed. Syncing to remote state.");
 
     const updateData = {
@@ -170,7 +168,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
   if (isLoadingMatch || !user) {
     return <GameLoader />;
   }
-
+  
   if (!match) {
     return (
         <div className="w-full max-w-2xl mx-auto flex items-center justify-center min-h-screen">
@@ -186,7 +184,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
         </div>
     );
   }
-
+  
   if (match.status === 'LOBBY') {
     return (
         <div className="w-full max-w-2xl mx-auto flex items-center justify-center min-h-screen">
@@ -216,7 +214,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
         </div>
     )
   }
-  
+
   if (!state.phase || !match.gameState) {
     return <GameLoader />;
   }
