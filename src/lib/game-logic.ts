@@ -127,7 +127,7 @@ function checkRowState(centerRow: CenterRowCard[]): { state: RowState; color?: C
 
 function isRainbowComplete(centerRow: CenterRowCard[]): boolean {
   const uniqueColors = new Set(centerRow.filter(c => c.isFaceUp).map(c => c.frontColor).filter(c => c !== 'White'));
-  return uniqueColors.size >= 6;
+  return uniqueColors.size >= 7;
 }
 
 
@@ -153,7 +153,7 @@ export function createGameReducer(matchRef: DocumentReference | null) {
     }
     
     if (!state || !state.phase) {
-      return {} as GameState;
+      return state;
     }
 
     if (state.phase !== 'PLAYING') {
@@ -251,7 +251,9 @@ export function createGameReducer(matchRef: DocumentReference | null) {
     }
 
     // After the new state is calculated, update the remote state
-    updateRemoteState(matchRef, newState);
+    if (newState !== state) {
+      updateRemoteState(matchRef, newState);
+    }
     return newState;
   }
 }
