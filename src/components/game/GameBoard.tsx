@@ -1,5 +1,6 @@
+// src/components/game/GameBoard.tsx
 'use client';
-import { useReducer, useEffect, useState, useRef, useCallback, useMemo } from 'react';
+import { useReducer, useEffect, useState, useCallback, useMemo } from 'react';
 import { gameReducer, getInitialGameState } from '@/lib/game-logic';
 import { PlayerHand } from './PlayerHand';
 import { OpponentHand } from './OpponentHand';
@@ -51,7 +52,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
 
   const { data: match, isLoading: isLoadingMatch } = useDoc<Match>(matchRef);
 
-  const [state, dispatch] = useReducer(gameReducer, null, () => ({} as GameState));
+  const [state, dispatch] = useReducer(gameReducer, {} as GameState);
 
   // Effect to sync remote state (from Firestore) to local state (useReducer)
   useEffect(() => {
@@ -94,7 +95,6 @@ export function GameBoard({ matchId }: GameBoardProps) {
       return;
     };
     
-    // If local state is identical to remote state, no update is needed.
     if (match && isEqual(state, match.gameState)) {
       return;
     }
@@ -229,8 +229,6 @@ export function GameBoard({ matchId }: GameBoardProps) {
   const isMyTurn = state.players[state.currentPlayerIndex]?.id === self.id;
   const canPlay = isMyTurn && state.turnState === 'PLAYING' && state.playedCardsThisTurn < 3;
   const isRoundOver = state.turnState === 'ROUND_OVER';
-  const playerToActNext = state.roundEndReason === 'RAINBOW_COMPLETE' ? opponent : self;
-
 
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col gap-4">
@@ -260,4 +258,3 @@ export function GameBoard({ matchId }: GameBoardProps) {
     </div>
   );
 }
-    

@@ -1,6 +1,6 @@
 'use client';
     
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import {
   DocumentReference,
   onSnapshot,
@@ -10,8 +10,6 @@ import {
 } from 'firebase/firestore';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
-import { isEqual } from 'lodash';
-
 
 /** Utility type to add an 'id' field to a given type T. */
 type WithId<T> = T & { id: string };
@@ -49,8 +47,6 @@ export function useDoc<T = any>(
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<FirestoreError | Error | null>(null);
 
-  const dataRef = useRef<StateDataType>(null);
-
   useEffect(() => {
     if (!memoizedDocRef) {
       setData(null);
@@ -65,14 +61,11 @@ export function useDoc<T = any>(
     const unsubscribe = onSnapshot(
       memoizedDocRef,
       (snapshot: DocumentSnapshot<DocumentData>) => {
-        let newData: StateDataType = null;
         if (snapshot.exists()) {
-          newData = { ...(snapshot.data() as T), id: snapshot.id };
-        }
-        
-        if (!isEqual(dataRef.current, newData)) {
-          dataRef.current = newData;
-          setData(newData);
+          setData({ ...(snapshot.data() as T), id: snapshot.id });
+        } else {
+          // Document does not exist
+          setData(null);
         }
         
         setError(null); // Clear any previous error on successful snapshot (even if doc doesn't exist)
