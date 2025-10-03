@@ -1,5 +1,5 @@
 'use client';
-import { useReducer, useEffect, useState, useRef } from 'react';
+import { useReducer, useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { gameReducer, getInitialGameState } from '@/lib/game-logic';
 import { PlayerHand } from './PlayerHand';
 import { OpponentHand } from './OpponentHand';
@@ -46,7 +46,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
   const firestore = useFirestore();
   const router = useRouter();
   const [isCancelling, setIsCancelling] = useState(false);
-  
+
   const matchRef = useMemoFirebase(() => {
     return firestore ? doc(firestore, 'matches', matchId) : null;
   },[firestore, matchId]);
@@ -54,34 +54,66 @@ export function GameBoard({ matchId }: GameBoardProps) {
   const { data: match, isLoading: isLoadingMatch } = useDoc<Match>(matchRef);
 
   const [state, dispatch] = useReducer(gameReducer, null, () => ({} as GameState));
-  
+
   const localUpdateRef = useRef(false);
+  const stateRef = useRef<GameState | null>(null);
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   // Effect to sync remote state (from Firestore) to local state (useReducer)
   useEffect(() => {
-    if (match && user) {
-      if (match.status === 'PLAYING' && !match.gameState && user.uid === match.player1Id) {
-        // Player 1 is responsible for initializing the game state.
-        const player1: Player = { id: match.player1Id, name: user.displayName || `Jugador ${user.uid.substring(0,5)}`, hand: [], discardPile: [] };
-        const player2: Player = { id: match.player2Id, name: `Jugador ${match.player2Id.substring(0,5)}`, hand: [], discardPile: [] };
-        const initialState = getInitialGameState([player1, player2]);
-        localUpdateRef.current = true;
-        setDocumentNonBlocking(matchRef!, { gameState: initialState }, { merge: true });
-      } else if (match.gameState) {
-        const isPlayerInGame = match.gameState.players.some(p => p.id === user.uid);
-        // Only update local state if it's different from remote state, to avoid loops.
-        // And ensure the local component hasn't just initiated an update.
-        if (isPlayerInGame && !localUpdateRef.current && !isEqual(state, match.gameState)) {
-            dispatch({ type: 'SET_GAME_STATE', payload: match.gameState });
-        }
-        if (localUpdateRef.current) {
-            // Clear the flag after a potential local update has been processed.
-            localUpdateRef.current = false;
-        }
-      }
+    if (!match || !user) {
+      return;
     }
-  }, [match, user, matchRef, state]);
-  
+
+    if (match.status === 'PLAYING' && !match.gameState && user.uid === match.player1Id) {
+      if (!matchRef) {
+        return;
+      }
+      const player1: Player = {
+        id: match.player1Id,
+        name: user.displayName || `Jugador ${user.uid.substring(0, 5)}`,
+        hand: [],
+        discardPile: [],
+      };
+      const player2: Player = {
+        id: match.player2Id,
+        name: `Jugador ${match.player2Id.substring(0, 5)}`,
+        hand: [],
+        discardPile: [],
+      };
+      const initialState = getInitialGameState([player1, player2]);
+      localUpdateRef.current = true;
+      setDocumentNonBlocking(matchRef, { gameState: initialState }, { merge: true });
+      return;
+    }
+
+    if (!match.gameState) {
+      return;
+    }
+
+    const localState = stateRef.current;
+    const isPlayerInGame = match.gameState.players.some(p => p.id === user.uid);
+
+    if (!isPlayerInGame) {
+      return;
+    }
+
+    if (localUpdateRef.current) {
+      if (!localState || !isEqual(localState, match.gameState)) {
+        dispatch({ type: 'SET_GAME_STATE', payload: match.gameState });
+      }
+      localUpdateRef.current = false;
+      return;
+    }
+
+    if (!localState || !localState.phase || !isEqual(localState, match.gameState)) {
+      dispatch({ type: 'SET_GAME_STATE', payload: match.gameState });
+    }
+  }, [match, user, matchRef]);
+
   // Effect to sync local state changes up to Firestore.
   useEffect(() => {
     // Wait until the state is initialized and the user is part of the game.
@@ -96,33 +128,58 @@ export function GameBoard({ matchId }: GameBoardProps) {
 
     // Set a flag indicating a local update is happening.
     localUpdateRef.current = true;
-    const updateData = { 
+    const updateData = {
           gameState: state,
           status: state.phase === 'GAME_OVER' ? 'GAME_OVER' : 'PLAYING' as const,
-          updatedAt: serverTimestamp() 
+          updatedAt: serverTimestamp()
     };
     setDocumentNonBlocking(matchRef, updateData, { merge: true });
 
   }, [state, matchRef, user, match]);
 
-  const handleCancelMatch = async () => {
+  const handleCancelMatch = useCallback(async () => {
     if (!matchRef) return;
     setIsCancelling(true);
     deleteDoc(matchRef)
-        .then(() => {
-            router.push('/');
-        })
-        .catch(e => {
-            errorEmitter.emit(
-              'permission-error',
-              new FirestorePermissionError({
-                path: `matches/${matchId}`,
-                operation: 'delete',
-              })
-            );
-            setIsCancelling(false);
-        });
-  };
+      .then(() => {
+        router.push('/');
+      })
+      .catch(e => {
+        errorEmitter.emit(
+          'permission-error',
+          new FirestorePermissionError({
+            path: `matches/${matchId}`,
+            operation: 'delete',
+          })
+        );
+        setIsCancelling(false);
+      });
+  }, [matchRef, router, matchId]);
+
+  const handlePlayCard = useCallback((handIndex: number, isBlind: boolean) => {
+    dispatch({ type: 'PLAY_CARD', payload: { handIndex, isBlind } });
+  }, []);
+
+  const handleEndTurn = useCallback(() => {
+    dispatch({ type: 'END_TURN' });
+  }, []);
+
+  const handleNextRound = useCallback(() => {
+    dispatch({ type: 'START_NEXT_ROUND' });
+  }, []);
+
+  const handleRestart = useCallback(() => {
+    dispatch({ type: 'RESTART_GAME' });
+  }, []);
+
+  const currentUserId = user?.uid ?? null;
+  const { self, opponent } = useMemo(() => {
+    const players = state.players ?? [];
+    return {
+      self: currentUserId ? players.find(p => p.id === currentUserId) : undefined,
+      opponent: currentUserId ? players.find(p => p.id !== currentUserId) : undefined,
+    };
+  }, [state.players, currentUserId]);
 
   // --- Render Logic ---
 
@@ -180,26 +237,6 @@ export function GameBoard({ matchId }: GameBoardProps) {
     return <GameLoader />;
   }
 
-
-  const handlePlayCard = (handIndex: number, isBlind: boolean) => {
-    dispatch({ type: 'PLAY_CARD', payload: { handIndex, isBlind } });
-  };
-  
-  const handleEndTurn = () => {
-    dispatch({ type: 'END_TURN' });
-  };
-  
-  const handleNextRound = () => {
-    dispatch({ type: 'START_NEXT_ROUND' });
-  };
-  
-  const handleRestart = () => {
-    dispatch({ type: 'RESTART_GAME' });
-  };
-
-  const self = state.players.find(p => p.id === user.uid);
-  const opponent = state.players.find(p => p.id !== user.uid);
-  
   if (!self || !opponent) {
     return (
        <div className="flex justify-center items-center h-full text-center text-muted-foreground">
