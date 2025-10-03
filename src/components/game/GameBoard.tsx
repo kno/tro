@@ -1,7 +1,7 @@
 // src/components/game/GameBoard.tsx
 'use client';
 import { useReducer, useEffect, useState, useCallback, useMemo } from 'react';
-import { gameReducer, getInitialGameState } from '@/lib/game-logic';
+import { createGameReducer, getInitialGameState } from '@/lib/game-logic';
 import { PlayerHand } from './PlayerHand';
 import { OpponentHand } from './OpponentHand';
 import { CenterRow } from './CenterRow';
@@ -51,75 +51,42 @@ export function GameBoard({ matchId }: GameBoardProps) {
 
   const { data: match, isLoading: isLoadingMatch } = useDoc<Match>(matchRef);
 
-  const [state, dispatch] = useReducer(gameReducer, match?.gameState ?? getInitialGameState([]));
+  const gameReducer = useMemo(() => createGameReducer(matchRef), [matchRef]);
+  const [state, dispatch] = useReducer(gameReducer, null, () => match?.gameState ?? getInitialGameState([]));
 
   // Effect to sync remote state (from Firestore) to local state (useReducer)
   useEffect(() => {
-    if (!match || !user) return;
-    
-    const remoteState = match.gameState;
-    
-    // Player 1 initializes the game state if it's missing
-    if (match.status === 'PLAYING' && !remoteState && user.uid === match.player1Id) {
-      if (!matchRef) return;
-      console.log("[GameBoard] Player 1 is initializing the game state.");
-      const player1: Player = {
-        id: match.player1Id,
-        name: user.displayName || `Jugador ${user.uid.substring(0, 5)}`,
-        hand: [],
-        discardPile: [],
-      };
-      const player2: Player = {
-        id: match.player2Id,
-        name: `Jugador ${match.player2Id.substring(0, 5)}`,
-        hand: [],
-        discardPile: [],
-      };
-      const initialState = getInitialGameState([player1, player2]);
-      updateDoc(matchRef, { gameState: initialState });
-      return;
+    if (match?.gameState && !isEqual(state, match.gameState)) {
+        dispatch({ type: 'SET_GAME_STATE', payload: match.gameState });
     }
-
-    if (!remoteState) return;
-    
-    if (!isEqual(state, remoteState)) {
-      console.log("[GameBoard] Remote state has changed. Syncing to local state.");
-      dispatch({ type: 'SET_GAME_STATE', payload: remoteState });
-    }
-    
-  }, [match, user, matchRef, state]);
+  }, [match?.gameState, state]);
 
 
-  // Effect to sync local state changes up to Firestore.
+  // Player 1 initializes the game state if it's missing (when P2 joins)
   useEffect(() => {
-    if (!state.phase || !user || !state.players?.find(p => p.id === user.uid) || !matchRef) {
-      return;
-    };
-    
-    if (match && isEqual(state, match.gameState)) {
-      return;
+    if (match && user && match.status === 'PLAYING' && !match.gameState && user.uid === match.player1Id) {
+        if (!matchRef) return;
+        
+        const player1: Player = {
+          id: match.player1Id,
+          name: user.displayName || `Jugador ${user.uid.substring(0, 5)}`,
+          hand: [],
+          discardPile: [],
+        };
+        const player2: Player = {
+          id: match.player2Id,
+          name: `Jugador ${match.player2Id.substring(0, 5)}`,
+          hand: [],
+          discardPile: [],
+        };
+        const initialState = getInitialGameState([player1, player2]);
+        
+        // We call updateDoc here which will trigger the onSnapshot listener,
+        // which will then update the state via the other useEffect.
+        updateDoc(matchRef, { gameState: initialState });
     }
-    
-    console.log("[GameBoard] Local state has changed. Syncing to remote state.");
+  }, [match, user, matchRef]);
 
-    const updateData = {
-          gameState: state,
-          status: state.phase === 'GAME_OVER' ? 'GAME_OVER' : 'PLAYING' as const,
-          updatedAt: serverTimestamp()
-    };
-
-    updateDoc(matchRef, updateData).catch(e => {
-        errorEmitter.emit(
-          'permission-error',
-          new FirestorePermissionError({
-            path: `matches/${matchId}`,
-            operation: 'update',
-            requestResourceData: updateData,
-          })
-        );
-    });
-
-  }, [state, matchRef, user, match, matchId]);
 
   const handleCancelMatch = useCallback(async () => {
     if (!matchRef) return;
@@ -158,12 +125,13 @@ export function GameBoard({ matchId }: GameBoardProps) {
 
   const currentUserId = user?.uid ?? null;
   const { self, opponent } = useMemo(() => {
-    const players = state.players ?? [];
+    const players = state?.players ?? [];
     return {
       self: currentUserId ? players.find(p => p.id === currentUserId) : undefined,
       opponent: currentUserId ? players.find(p => p.id !== currentUserId) : undefined,
     };
-  }, [state.players, currentUserId]);
+  }, [state?.players, currentUserId]);
+
 
   if (isLoadingMatch || !user) {
     return <GameLoader />;
@@ -215,7 +183,8 @@ export function GameBoard({ matchId }: GameBoardProps) {
     )
   }
 
-  if (!state.phase || !match.gameState) {
+  // If we have a match but no game state yet (e.g. P2 just joined, P1 is creating state), show loader.
+  if (!state || !state.phase) {
     return <GameLoader />;
   }
 

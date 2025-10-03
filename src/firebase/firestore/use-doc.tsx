@@ -56,7 +56,6 @@ export function useDoc<T = any>(
     // This check is crucial to prevent infinite loops.
     if (!memoizedDocRef.__memo) {
       const err = new Error('useDoc was not passed a properly memoized document reference. Use useMemoFirebase to memoize the reference.');
-      // Throw in development for immediate feedback.
       if (process.env.NODE_ENV === 'development') {
         throw err;
       }
