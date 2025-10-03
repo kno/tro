@@ -45,11 +45,11 @@ export function getInitialGameState(players: Player[]): GameState {
   const initialDeck = createDeck();
   
   // Ensure players array is valid and reset their state
-  const validatedPlayers = players.map(p => {
+  const validatedPlayers = players.map<Player>(p => {
       if (!p || !p.id || !p.name) {
           throw new Error("Invalid player object provided to getInitialGameState");
       }
-      return { ...p, hand: [], discardPile: [] };
+      return { ...p, hand: [] as Card[], discardPile: [] as Card[] };
   });
   
   // Deal cards

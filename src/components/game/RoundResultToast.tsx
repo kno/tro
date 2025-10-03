@@ -3,7 +3,6 @@ import type { GameState } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Award, ShieldAlert } from 'lucide-react';
-import { useUser } from '@/firebase';
 
 interface RoundResultToastProps {
   state: GameState;

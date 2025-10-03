@@ -9,14 +9,11 @@ import { ActionPanel } from './ActionPanel';
 import { EndGameDialog } from './EndGameDialog';
 import { RoundResultToast } from './RoundResultToast';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useDoc, useFirestore, useUser, useMemoFirebase } from '@/firebase';
-import { doc, serverTimestamp, deleteDoc } from 'firebase/firestore';
+import { useAuthentication, useMatch, useMatchesActions } from '@/data';
 import type { Match, GameState, Player } from '@/lib/types';
-import { setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 import { Loader2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../ui/card';
 import { useRouter } from 'next/navigation';
-import { FirestorePermissionError, errorEmitter } from '@/firebase';
 import { isEqual } from 'lodash';
 import { Button } from '@/components/ui/button';
 
@@ -42,16 +39,12 @@ interface GameBoardProps {
 }
 
 export function GameBoard({ matchId }: GameBoardProps) {
-  const { user } = useUser();
-  const firestore = useFirestore();
+  const { user } = useAuthentication();
   const router = useRouter();
   const [isCancelling, setIsCancelling] = useState(false);
-  
-  const matchRef = useMemoFirebase(() => {
-    return firestore ? doc(firestore, 'matches', matchId) : null;
-  },[firestore, matchId]);
 
-  const { data: match, isLoading: isLoadingMatch } = useDoc<Match>(matchRef);
+  const { data: match, isLoading: isLoadingMatch } = useMatch(matchId);
+  const { mergeMatch, deleteMatch } = useMatchesActions();
 
   const [state, dispatch] = useReducer(gameReducer, null, () => ({} as GameState));
   
@@ -66,7 +59,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
         const player2: Player = { id: match.player2Id, name: `Jugador ${match.player2Id.substring(0,5)}`, hand: [], discardPile: [] };
         const initialState = getInitialGameState([player1, player2]);
         localUpdateRef.current = true;
-        setDocumentNonBlocking(matchRef!, { gameState: initialState }, { merge: true });
+        void mergeMatch(matchId, { gameState: initialState });
       } else if (match.gameState) {
         const isPlayerInGame = match.gameState.players.some(p => p.id === user.uid);
         // Only update local state if it's different from remote state, to avoid loops.
@@ -80,15 +73,15 @@ export function GameBoard({ matchId }: GameBoardProps) {
         }
       }
     }
-  }, [match, user, matchRef, state]);
+  }, [match, user, mergeMatch, matchId, state]);
   
   // Effect to sync local state changes up to Firestore.
   useEffect(() => {
     // Wait until the state is initialized and the user is part of the game.
-    if (!state.phase || !user || !state.players?.find(p => p.id === user.uid) || !matchRef) {
+    if (!state.phase || !user || !state.players?.find(p => p.id === user.uid) || !match) {
       return;
     };
-    
+
     // If local state is identical to remote state, no update is needed.
     if (match && isEqual(state, match.gameState)) {
       return;
@@ -96,32 +89,24 @@ export function GameBoard({ matchId }: GameBoardProps) {
 
     // Set a flag indicating a local update is happening.
     localUpdateRef.current = true;
-    const updateData = { 
-          gameState: state,
-          status: state.phase === 'GAME_OVER' ? 'GAME_OVER' : 'PLAYING' as const,
-          updatedAt: serverTimestamp() 
-    };
-    setDocumentNonBlocking(matchRef, updateData, { merge: true });
+    const updateData = {
+      gameState: state,
+      status: state.phase === 'GAME_OVER' ? 'GAME_OVER' : 'PLAYING' as const,
+    } satisfies Partial<Omit<Match, 'id'>>;
+    void mergeMatch(matchId, updateData);
 
-  }, [state, matchRef, user, match]);
+  }, [state, user, match, mergeMatch, matchId]);
 
   const handleCancelMatch = async () => {
-    if (!matchRef) return;
+    if (!matchId) return;
     setIsCancelling(true);
-    deleteDoc(matchRef)
-        .then(() => {
-            router.push('/');
-        })
-        .catch(e => {
-            errorEmitter.emit(
-              'permission-error',
-              new FirestorePermissionError({
-                path: `matches/${matchId}`,
-                operation: 'delete',
-              })
-            );
-            setIsCancelling(false);
-        });
+    try {
+      await deleteMatch(matchId);
+      router.push('/');
+    } catch (e) {
+      console.error('Error cancelling match', e);
+      setIsCancelling(false);
+    }
   };
 
   // --- Render Logic ---

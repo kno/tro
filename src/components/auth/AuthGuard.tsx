@@ -1,7 +1,6 @@
 'use client';
 
-import { useUser, useAuth } from '@/firebase/provider';
-import { initiateAnonymousSignIn } from '@/firebase/non-blocking-login';
+import { useAuthentication } from '@/data';
 import { useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
 
@@ -10,14 +9,13 @@ interface AuthGuardProps {
 }
 
 export function AuthGuard({ children }: AuthGuardProps) {
-  const { user, isUserLoading } = useUser();
-  const auth = useAuth();
+  const { user, isUserLoading, signInAnonymously } = useAuthentication();
 
   useEffect(() => {
     if (!isUserLoading && !user) {
-      initiateAnonymousSignIn(auth);
+      signInAnonymously();
     }
-  }, [user, isUserLoading, auth]);
+  }, [user, isUserLoading, signInAnonymously]);
 
   if (isUserLoading || !user) {
     return (
