@@ -152,8 +152,7 @@ export function getInitialGameState(players: Player[]): GameState {
 function checkRowState(centerRow: CenterRowCard[]): { state: RowState; color?: Color } {
   const visibleColors = new Set<Color>();
   for (const card of centerRow) {
-    if(card.isFaceUp) {
-      const color = card.frontColor;
+    const color = card.isFaceUp ? card.frontColor : card.backColor;
       if (color === 'Black') {
         return { state: 'BLACK_CARD' };
       }
@@ -163,7 +162,6 @@ function checkRowState(centerRow: CenterRowCard[]): { state: RowState; color?: C
         }
         visibleColors.add(color);
       }
-    }
   }
   return { state: 'VALID' };
 }
@@ -224,12 +222,14 @@ export function createGameReducer(matchRef: DocumentReference | null, currentUse
           if (!currentPlayer.hand[handIndex] || state.turnState !== 'PLAYING' || state.playedCardsThisTurn >= 3) return state;
           
           const isFirstAction = state.lastActionInTurn === 'NONE';
-          
+
+          // Can only play if it's the first action, OR if the last action was a flip.
           if (!isFirstAction && state.lastActionInTurn !== 'FLIP') return state; 
           
           const cardToPlay = currentPlayer.hand[handIndex];
           const newHand = currentPlayer.hand.filter((_, i) => i !== handIndex);
           
+          // The card that goes to the center row. If played blind, front/back are swapped.
           const cardForCenter: Card = { 
             ...cardToPlay, 
             frontColor: isBlind ? cardToPlay.backColor : cardToPlay.frontColor,
@@ -238,7 +238,7 @@ export function createGameReducer(matchRef: DocumentReference | null, currentUse
           
           const newCenterRowCard: CenterRowCard = { 
             ...cardForCenter,
-            isFaceUp: true, 
+            isFaceUp: true, // Always face up when played from hand
           };
 
           const logMessage = isBlind 
@@ -256,10 +256,12 @@ export function createGameReducer(matchRef: DocumentReference | null, currentUse
             lastActionLog: logMessage
           };
           
+          // If this was the first action (played directly), end the turn immediately.
           if (isFirstAction) {
             tempState = endTurn(tempState, true);
           }
           
+          // Check for round-ending conditions after the move
           const { state: rowState, color: duplicateColor } = checkRowState(tempState.centerRow);
           
           if (rowState === 'BLACK_CARD') {
@@ -279,14 +281,18 @@ export function createGameReducer(matchRef: DocumentReference | null, currentUse
 
           if (state.turnState !== 'PLAYING' || state.playedCardsThisTurn >= 3) return state;
           
+          // Can only flip if it's the first action OR if the last action was a play.
           if (state.lastActionInTurn !== 'NONE' && state.lastActionInTurn !== 'PLAY') return state;
 
           const cardToFlip = state.centerRow[centerRowIndex];
           if (!cardToFlip) return state;
 
+          // Create a new card object with swapped colors and toggled face
           const newCardFlipped: CenterRowCard = {
-            ...cardToFlip,
-            isFaceUp: !cardToFlip.isFaceUp
+            id: cardToFlip.id,
+            frontColor: cardToFlip.backColor, // The new front is the old back
+            backColor: cardToFlip.frontColor,  // The new back is the old front
+            isFaceUp: true, // It remains "face up" but shows the other side
           };
 
           const newCenterRow = [
@@ -295,16 +301,17 @@ export function createGameReducer(matchRef: DocumentReference | null, currentUse
             ...state.centerRow.slice(centerRowIndex + 1)
           ];
           
-          const logMessage = `${currentPlayer.name} volteó una carta en la fila.`;
+          const logMessage = `${currentPlayer.name} volteó una carta en la fila, revelando un ${newCardFlipped.frontColor}.`;
 
           let tempState: GameState = {
             ...state,
             centerRow: newCenterRow,
             lastActionInTurn: 'FLIP',
             lastActionLog: logMessage,
-            playedCardsThisTurn: state.playedCardsThisTurn,
+            // playedCardsThisTurn is NOT incremented
           };
           
+          // Check for round-ending conditions
           const { state: rowState, color: duplicateColor } = checkRowState(tempState.centerRow);
           
           if (rowState === 'BLACK_CARD') {
@@ -381,6 +388,7 @@ function endTurn(state: GameState, isImmediate: boolean): GameState {
   const currentPlayer = newPlayers[state.currentPlayerIndex];
   let isGameOver = false;
   
+  // Only draw cards if cards were actually played from hand
   if (state.playedCardsThisTurn > 0) {
     const cardsToDraw = state.playedCardsThisTurn;
     for (let i = 0; i < cardsToDraw; i++) {
