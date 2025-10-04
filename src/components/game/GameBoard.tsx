@@ -131,7 +131,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
   }, [state?.players, currentUserId]);
 
 
-  if (isLoadingMatch || !user || !state) {
+  if (isLoadingMatch || !user || !match || (match.status === 'PLAYING' && !match.gameState)) {
     return <GameLoader />;
   }
   
