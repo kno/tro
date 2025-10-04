@@ -58,7 +58,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
     }
     // DO NOT add `state` to dependencies. It will cause an infinite loop.
     // We only want to sync from remote to local when the remote `match` object changes.
-  }, [match?.gameState]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [match?.gameState, dispatch]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
   // Player 1 initializes the game state if it's missing (when P2 joins)
@@ -178,7 +178,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
                 </CardFooter>
             </Card>
         </div>
-    )
+    );
   }
 
   // If we have a match but no game state yet (e.g. P2 just joined, P1 is creating state), show loader.
@@ -202,7 +202,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
     <div className="w-full max-w-7xl mx-auto flex flex-col gap-4">
       <OpponentHand player={opponent} isCurrentPlayer={!isMyTurn} />
 
-      <CenterRow cards={state.centerRow} />
+      <CenterRow cards={state.centerRow} deckCount={state.deck.length} />
 
       <PlayerHand 
         player={self} 
