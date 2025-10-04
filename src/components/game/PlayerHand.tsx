@@ -12,9 +12,9 @@ interface PlayerHandProps {
 
 export function PlayerHand({ player, onPlayCard, isCurrentPlayer, canPlay }: PlayerHandProps) {
   return (
-    <Card className={cn("transition-colors", isCurrentPlayer ? "bg-background" : "bg-card/50")}>
+    <Card className={cn("transition-colors", isCurrentPlayer ? "bg-white" : "bg-card/50")}>
       <CardHeader className='pb-2 pt-4'>
-        <CardTitle className={cn('text-lg', isCurrentPlayer ? "text-foreground" : "text-muted-foreground")}>
+        <CardTitle className={cn('text-lg', isCurrentPlayer ? "text-black" : "text-muted-foreground")}>
             {player.name} - Puntos: {player.discardPile.length}
         </CardTitle>
       </CardHeader>
@@ -28,7 +28,7 @@ export function PlayerHand({ player, onPlayCard, isCurrentPlayer, canPlay }: Pla
                 view="player"
                 onClick={() => onPlayCard(index, false)}
                 onPlayBlind={() => onPlayCard(index, true)}
-                className="w-20 md:w-28"
+                className="w-20 md-w-28"
                 isPlayable={isCurrentPlayer && canPlay}
               />
             ))
