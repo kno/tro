@@ -225,10 +225,8 @@ export function createGameReducer(matchRef: DocumentReference | null, currentUse
           
           const isFirstAction = state.lastActionInTurn === 'NONE';
           
-          // Can't play if it wasn't the first action and the last action wasn't a flip
           if (!isFirstAction && state.lastActionInTurn !== 'FLIP') return state; 
           
-
           const cardToPlay = currentPlayer.hand[handIndex];
           const newHand = currentPlayer.hand.filter((_, i) => i !== handIndex);
           
@@ -249,7 +247,6 @@ export function createGameReducer(matchRef: DocumentReference | null, currentUse
             
           const playedCardsThisTurn = state.playedCardsThisTurn + 1;
           
-
           let tempState: GameState = {
             ...state,
             players: state.players.map((p, i) => i === state.currentPlayerIndex ? { ...p, hand: newHand } : p),
@@ -259,7 +256,6 @@ export function createGameReducer(matchRef: DocumentReference | null, currentUse
             lastActionLog: logMessage
           };
           
-          // If it's the first action and it's a play, the turn ends immediately.
           if (isFirstAction) {
             tempState = endTurn(tempState, true);
           }
@@ -283,22 +279,30 @@ export function createGameReducer(matchRef: DocumentReference | null, currentUse
 
           if (state.turnState !== 'PLAYING' || state.playedCardsThisTurn >= 3) return state;
           
-          // Can only flip if it's the first action or after playing a card
           if (state.lastActionInTurn !== 'NONE' && state.lastActionInTurn !== 'PLAY') return state;
 
-
-          const newCenterRow = [...state.centerRow];
-          const cardToFlip = newCenterRow[centerRowIndex];
+          const cardToFlip = state.centerRow[centerRowIndex];
           if (!cardToFlip) return state;
 
-          cardToFlip.isFaceUp = !cardToFlip.isFaceUp;
+          const newCardFlipped: CenterRowCard = {
+            ...cardToFlip,
+            isFaceUp: !cardToFlip.isFaceUp
+          };
+
+          const newCenterRow = [
+            ...state.centerRow.slice(0, centerRowIndex),
+            newCardFlipped,
+            ...state.centerRow.slice(centerRowIndex + 1)
+          ];
+          
           const logMessage = `${currentPlayer.name} volteó una carta en la fila.`;
 
           let tempState: GameState = {
             ...state,
             centerRow: newCenterRow,
             lastActionInTurn: 'FLIP',
-            lastActionLog: logMessage
+            lastActionLog: logMessage,
+            playedCardsThisTurn: state.playedCardsThisTurn,
           };
           
           const { state: rowState, color: duplicateColor } = checkRowState(tempState.centerRow);
@@ -315,18 +319,17 @@ export function createGameReducer(matchRef: DocumentReference | null, currentUse
         }
 
         case 'END_TURN': {
-          if (state.playedCardsThisTurn === 0) return state; // Prevent ending turn without playing a card
+          if (state.playedCardsThisTurn === 0) return state;
           return endTurn(state, false);
         }
 
         case 'START_NEXT_ROUND': {
           if (!state.roundEndReason) return state;
 
-          // Only the next player to act can start the round
           let nextPlayerToActIndex;
           if (state.roundEndReason === 'RAINBOW_COMPLETE') {
               nextPlayerToActIndex = 1 - state.currentPlayerIndex;
-          } else { // DUPLICATE_COLOR or BLACK_CARD
+          } else { 
               nextPlayerToActIndex = state.currentPlayerIndex;
           }
           if (state.players[nextPlayerToActIndex].id !== currentUserId) {
@@ -348,7 +351,6 @@ export function createGameReducer(matchRef: DocumentReference | null, currentUse
         case 'TICK_TIMER': {
           if (state.phase !== 'PLAYING' || state.turnState !== 'PLAYING') return state;
           if (state.turnTimer > 0) {
-            // Timer ticks don't need to be persisted to Firestore, so we return early without updating remote.
             return { ...state, turnTimer: state.turnTimer - 1 };
           } else {
             return endTurn({ ...state, lastActionLog: `${state.players[state.currentPlayerIndex].name} se quedó sin tiempo. Turno finalizado.` }, false);
@@ -362,7 +364,6 @@ export function createGameReducer(matchRef: DocumentReference | null, currentUse
 
     newState = computeNewState();
     
-    // After the new state is calculated, update the remote state if it changed and it's not a timer tick
     if (newState && newState !== state && action.type !== 'TICK_TIMER' && (action.type !== 'SET_GAME_STATE')) {
       updateRemoteState(matchRef, newState);
     }
@@ -380,16 +381,15 @@ function endTurn(state: GameState, isImmediate: boolean): GameState {
   const currentPlayer = newPlayers[state.currentPlayerIndex];
   let isGameOver = false;
   
-  // A turn always involves at least one card played
-  if (state.playedCardsThisTurn === 0) return state;
-
-  const cardsToDraw = state.playedCardsThisTurn;
-  for (let i = 0; i < cardsToDraw; i++) {
-    if (newDeck.length > 0) {
-      currentPlayer.hand.push(newDeck.pop()!);
-    } else {
-      isGameOver = true;
-      break;
+  if (state.playedCardsThisTurn > 0) {
+    const cardsToDraw = state.playedCardsThisTurn;
+    for (let i = 0; i < cardsToDraw; i++) {
+      if (newDeck.length > 0) {
+        currentPlayer.hand.push(newDeck.pop()!);
+      } else {
+        isGameOver = true;
+        break;
+      }
     }
   }
   
