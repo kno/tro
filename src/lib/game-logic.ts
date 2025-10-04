@@ -222,7 +222,12 @@ export function createGameReducer(matchRef: DocumentReference | null, currentUse
           const currentPlayer = state.players[state.currentPlayerIndex];
           
           if (!currentPlayer.hand[handIndex] || state.turnState !== 'PLAYING' || state.playedCardsThisTurn >= 3) return state;
-          if (state.lastActionInTurn === 'PLAY') return state; // Can't play twice in a row
+          
+          const isFirstAction = state.lastActionInTurn === 'NONE';
+          
+          // Can't play if it wasn't the first action and the last action wasn't a flip
+          if (!isFirstAction && state.lastActionInTurn !== 'FLIP') return state; 
+          
 
           const cardToPlay = currentPlayer.hand[handIndex];
           const newHand = currentPlayer.hand.filter((_, i) => i !== handIndex);
@@ -243,7 +248,7 @@ export function createGameReducer(matchRef: DocumentReference | null, currentUse
             : `${currentPlayer.name} jugó un ${newCenterRowCard.frontColor}.`;
             
           const playedCardsThisTurn = state.playedCardsThisTurn + 1;
-          const isFirstAction = state.lastActionInTurn === 'NONE';
+          
 
           let tempState: GameState = {
             ...state,
@@ -276,8 +281,10 @@ export function createGameReducer(matchRef: DocumentReference | null, currentUse
           const { centerRowIndex } = action.payload;
           const currentPlayer = state.players[state.currentPlayerIndex];
 
-          if (state.turnState !== 'PLAYING' || state.playedCardsThisTurn >= 3) return state;
-          if (state.lastActionInTurn === 'FLIP') return state;
+          if (state.turnState !== 'PLAYING') return state;
+          // Can only flip if it's the first action or after playing a card
+          if (state.lastActionInTurn !== 'NONE' && state.lastActionInTurn !== 'PLAY') return state;
+
 
           const newCenterRow = [...state.centerRow];
           const cardToFlip = newCenterRow[centerRowIndex];
@@ -285,13 +292,10 @@ export function createGameReducer(matchRef: DocumentReference | null, currentUse
 
           cardToFlip.isFaceUp = !cardToFlip.isFaceUp;
           const logMessage = `${currentPlayer.name} volteó una carta en la fila.`;
-          
-          const playedCardsThisTurn = state.playedCardsThisTurn + 1;
 
           let tempState: GameState = {
             ...state,
             centerRow: newCenterRow,
-            playedCardsThisTurn,
             lastActionInTurn: 'FLIP',
             lastActionLog: logMessage
           };
@@ -374,9 +378,10 @@ function endTurn(state: GameState, isImmediate: boolean): GameState {
   const newPlayers = JSON.parse(JSON.stringify(state.players));
   const currentPlayer = newPlayers[state.currentPlayerIndex];
   let isGameOver = false;
+  
+  // A turn always involves at least one card played
+  if (state.playedCardsThisTurn === 0 && !isImmediate) return state;
 
-  // Only draw if the turn is ending normally, not from an immediate play.
-  // The immediate play rule has been removed for now.
   const cardsToDraw = state.playedCardsThisTurn;
   for (let i = 0; i < cardsToDraw; i++) {
     if (newDeck.length > 0) {
