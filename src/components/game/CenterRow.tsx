@@ -12,7 +12,7 @@ interface CenterRowProps {
 
 export function CenterRow({ cards, deckCount, onFlipCard, canFlip }: CenterRowProps) {
   return (
-    <div className="relative w-full bg-primary/10 rounded-lg p-4 my-2 min-h-[10vh]">
+    <div className="relative w-full bg-primary/10 rounded-lg p-2 my-2 min-h-[10vh]">
       <div className="absolute top-2 left-2 flex items-center gap-2 bg-background/50 backdrop-blur-sm rounded-full px-3 py-1 text-sm font-semibold text-foreground border">
         <Layers className="w-4 h-4" />
         <span>Mazo: {deckCount}</span>
@@ -25,11 +25,9 @@ export function CenterRow({ cards, deckCount, onFlipCard, canFlip }: CenterRowPr
               card={card}
               view="center"
               isFaceUp={card.isFaceUp}
-              onClick={canFlip ? () => onFlipCard(index) : undefined}
-              className={cn(
-                "w-20 md:w-28",
-                canFlip && "cursor-pointer ring-4 ring-transparent hover:ring-accent"
-              )}
+              onClick={() => onFlipCard(index)}
+              isPlayable={canFlip}
+              className="w-20 md:w-28"
             />
           ))
         ) : (
