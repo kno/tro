@@ -380,7 +380,7 @@ function endTurn(state: GameState, isImmediate: boolean): GameState {
   let isGameOver = false;
   
   // A turn always involves at least one card played
-  if (state.playedCardsThisTurn === 0 && !isImmediate) return state;
+  if (state.playedCardsThisTurn === 0) return state;
 
   const cardsToDraw = state.playedCardsThisTurn;
   for (let i = 0; i < cardsToDraw; i++) {
