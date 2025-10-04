@@ -239,12 +239,14 @@ export function createGameReducer(matchRef: DocumentReference | null) {
           const logMessage = isBlind 
             ? `${currentPlayer.name} jugó una carta a ciegas, revelando un ${newCenterRowCard.frontColor}.`
             : `${currentPlayer.name} jugó un ${newCenterRowCard.frontColor}.`;
+            
+          const playedCardsThisTurn = state.playedCardsThisTurn + 1;
 
           const tempState: GameState = {
             ...state,
             players: state.players.map((p, i) => i === state.currentPlayerIndex ? { ...p, hand: newHand } : p),
             centerRow: [...state.centerRow, newCenterRowCard],
-            playedCardsThisTurn: state.playedCardsThisTurn + 1,
+            playedCardsThisTurn: playedCardsThisTurn,
             lastActionLog: logMessage
           };
           
@@ -257,6 +259,10 @@ export function createGameReducer(matchRef: DocumentReference | null) {
           } else if (isRainbowComplete(tempState.centerRow)) {
             return { ...tempState, turnState: 'ROUND_OVER', roundEndReason: 'RAINBOW_COMPLETE', lastActionLog: `${currentPlayer.name} completó un ARCOÍRIS!` };
           } else {
+            // Check if the turn ends automatically
+            if (playedCardsThisTurn === 3) {
+                return endTurn(tempState);
+            }
             return tempState;
           }
         }
