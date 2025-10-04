@@ -52,11 +52,21 @@ function createDeck(): Card[] {
 
   const frontColors = [...colors];
   const backColors = [...colors].sort(() => 0.5 - Math.random());
+  
+  // Ensure no card has the same front and back color
+  for (let i = 0; i < frontColors.length; i++) {
+    if (frontColors[i] === backColors[i]) {
+      // If there's a match, swap with the next card's back color.
+      // The last card is swapped with the first.
+      const nextIndex = (i + 1) % backColors.length;
+      [backColors[i], backColors[nextIndex]] = [backColors[nextIndex], backColors[i]];
+    }
+  }
 
   let deck = frontColors.map((frontColor, i) => ({
     id: i,
     frontColor,
-    backColor: backColors[i],
+    backColor: backColors[i], 
   }));
 
   // Fisher-Yates shuffle
@@ -251,7 +261,7 @@ export function createGameReducer(matchRef: DocumentReference | null) {
     }
 
     // After the new state is calculated, update the remote state
-    if (newState !== state) {
+    if (newState && newState !== state) {
       updateRemoteState(matchRef, newState);
     }
     return newState;
