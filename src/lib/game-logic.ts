@@ -108,19 +108,26 @@ export function getInitialGameState(players: Player[]): GameState {
   
   const validatedPlayers = players.map((p, index) => {
       if (!p || !p.id) {
+          // For initial setup before players are known, we can return a dummy structure.
+          if (players.length === 0) {
+              return { id: `dummy-${index}`, name: ``, hand: [], discardPile: [] };
+          }
           throw new Error("Invalid player object provided to getInitialGameState");
       }
       // Assign names here to ensure consistency
       return { id: p.id, name: `Jugador ${index + 1}`, hand: [], discardPile: [] };
   });
   
-  validatedPlayers.forEach(player => {
-    for (let i = 0; i < HAND_SIZE; i++) {
-      if (initialDeck.length > 0) {
-        player.hand.push(initialDeck.pop()!);
-      }
-    }
-  });
+  // Only deal cards if we have real players
+  if (players.length > 0 && players[0].id) {
+    validatedPlayers.forEach(player => {
+        for (let i = 0; i < HAND_SIZE; i++) {
+        if (initialDeck.length > 0) {
+            player.hand.push(initialDeck.pop()!);
+        }
+        }
+    });
+  }
 
 
   return {
@@ -174,7 +181,6 @@ function isRainbowComplete(centerRow: CenterRowCard[]): boolean {
 // --- REDUCER ---
 export type GameAction =
   | { type: 'SET_GAME_STATE'; payload: GameState }
-  | { type: 'RESTART_GAME_WITH_STATE'; payload: GameState }
   | { type: 'PLAY_CARD'; payload: { handIndex: number; isBlind: boolean } }
   | { type: 'END_TURN' }
   | { type: 'START_NEXT_ROUND' }
@@ -190,7 +196,7 @@ export function createGameReducer(matchRef: DocumentReference | null, currentUse
 
     // The main logic is wrapped in a function to avoid duplicating the remote update call.
     const computeNewState = (): GameState | null => {
-      if (action.type === 'SET_GAME_STATE' || action.type === 'RESTART_GAME_WITH_STATE') {
+      if (action.type === 'SET_GAME_STATE') {
         // This action is only for syncing remote state to local, so we don't update remote.
         return action.payload;
       }
@@ -314,7 +320,7 @@ export function createGameReducer(matchRef: DocumentReference | null, currentUse
     newState = computeNewState();
     
     // After the new state is calculated, update the remote state if it changed and it's not a timer tick
-    if (newState && newState !== state && action.type !== 'TICK_TIMER' && (action.type !== 'SET_GAME_STATE' && action.type !== 'RESTART_GAME_WITH_STATE')) {
+    if (newState && newState !== state && action.type !== 'TICK_TIMER' && (action.type !== 'SET_GAME_STATE')) {
       updateRemoteState(matchRef, newState);
     }
     

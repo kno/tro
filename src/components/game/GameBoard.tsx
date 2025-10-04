@@ -49,25 +49,29 @@ export function GameBoard({ matchId }: GameBoardProps) {
     return createGameReducer(matchRef, user?.uid ?? null);
   }, [matchRef, user?.uid]);
 
-  const [state, dispatch] = useReducer(gameReducer, match?.gameState ?? getInitialGameState([]));
+  // IMPORTANT: Initialize reducer with a valid state structure, even if it's a dummy one.
+  const [state, dispatch] = useReducer(gameReducer, getInitialGameState([]));
 
-  // This effect is crucial for syncing the remote state from Firestore to the local state of the reducer.
+  // This effect syncs remote state from Firestore to the local reducer.
   useEffect(() => {
     if (match?.gameState && !isEqual(state, match.gameState)) {
         dispatch({ type: 'SET_GAME_STATE', payload: match.gameState });
     }
     // DO NOT add `state` to dependencies. It will cause an infinite loop.
-    // We only want to sync from remote to local when the remote `match` object changes.
   }, [match?.gameState, dispatch]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
-  // Player 1 initializes the game state if it's missing (e.g., when P2 joins)
-  // This effect MUST run independently of the main component render logic.
+  // EFFECT FOR PLAYER 1 TO INITIALIZE THE GAME STATE
+  // This runs independently and directly updates Firestore, breaking the deadlock.
   useEffect(() => {
-    if (match && user && match.status === 'PLAYING' && !match.gameState && user.uid === match.player1Id) {
-        if (!matchRef) return;
+    if (
+      match && user && matchRef &&
+      match.status === 'PLAYING' &&
+      !match.gameState && // The crucial condition
+      user.uid === match.player1Id // Only Player 1 should do this
+    ) {
+        console.log("Player 1 is initializing the game state directly via updateDoc...");
         
-        console.log("Player 1 is initializing the game state...");
         const player1: Player = {
           id: match.player1Id,
           name: `Jugador 1`,
@@ -82,11 +86,24 @@ export function GameBoard({ matchId }: GameBoardProps) {
         };
         const initialState = getInitialGameState([player1, player2]);
         
-        // Directly dispatch to update remote state via reducer.
-        // The reducer will handle the updateDoc call.
-        dispatch({type: 'RESTART_GAME_WITH_STATE', payload: initialState });
+        const updateData = {
+          gameState: initialState,
+          updatedAt: serverTimestamp()
+        };
+
+        updateDoc(matchRef, updateData).catch(e => {
+            console.error("Failed to initialize game state:", e);
+            errorEmitter.emit(
+              'permission-error',
+              new FirestorePermissionError({
+                path: matchRef.path,
+                operation: 'update',
+                requestResourceData: updateData,
+              })
+            );
+        });
     }
-  }, [match, user, matchRef, dispatch]);
+  }, [match, user, matchRef]); // Dependencies are the things needed to make the decision.
 
 
   const handleCancelMatch = useCallback(async () => {
