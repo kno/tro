@@ -256,7 +256,7 @@ export function createGameReducer(matchRef: DocumentReference | null, currentUse
           
           // If it's the first action and it's a play, the turn ends immediately.
           if (isFirstAction) {
-            tempState = endTurn(tempState, true); // Pass true to indicate an immediate turn end
+            tempState = endTurn(tempState, true);
           }
           
           const { state: rowState, color: duplicateColor } = checkRowState(tempState.centerRow);
@@ -277,7 +277,7 @@ export function createGameReducer(matchRef: DocumentReference | null, currentUse
           const currentPlayer = state.players[state.currentPlayerIndex];
 
           if (state.turnState !== 'PLAYING' || state.playedCardsThisTurn >= 3) return state;
-          if (state.lastActionInTurn === 'FLIP' || state.lastActionInTurn === 'NONE') return state; // Can't flip twice or as first action
+          if (state.lastActionInTurn === 'FLIP') return state;
 
           const newCenterRow = [...state.centerRow];
           const cardToFlip = newCenterRow[centerRowIndex];
@@ -286,9 +286,12 @@ export function createGameReducer(matchRef: DocumentReference | null, currentUse
           cardToFlip.isFaceUp = !cardToFlip.isFaceUp;
           const logMessage = `${currentPlayer.name} volteó una carta en la fila.`;
           
+          const playedCardsThisTurn = state.playedCardsThisTurn + 1;
+
           let tempState: GameState = {
             ...state,
             centerRow: newCenterRow,
+            playedCardsThisTurn,
             lastActionInTurn: 'FLIP',
             lastActionLog: logMessage
           };
@@ -373,7 +376,8 @@ function endTurn(state: GameState, isImmediate: boolean): GameState {
   let isGameOver = false;
 
   // Only draw if the turn is ending normally, not from an immediate play.
-  const cardsToDraw = isImmediate ? 0 : state.playedCardsThisTurn;
+  // The immediate play rule has been removed for now.
+  const cardsToDraw = state.playedCardsThisTurn;
   for (let i = 0; i < cardsToDraw; i++) {
     if (newDeck.length > 0) {
       currentPlayer.hand.push(newDeck.pop()!);

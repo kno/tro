@@ -1,4 +1,4 @@
-// src/components/game/GameBoard.tsx
+// src/app/game/GameBoard.tsx
 'use client';
 import { useReducer, useEffect, useState, useCallback, useMemo } from 'react';
 import { createGameReducer, getInitialGameState } from '@/lib/game-logic';
@@ -223,8 +223,8 @@ export function GameBoard({ matchId }: GameBoardProps) {
   const isMyTurn = state.players[state.currentPlayerIndex]?.id === self.id;
   const isRoundOver = state.turnState === 'ROUND_OVER';
 
-  const canPlayCard = isMyTurn && !isRoundOver && state.playedCardsThisTurn < 3 && (state.lastActionInTurn === 'NONE' || state.lastActionInTurn === 'FLIP');
-  const canFlipCard = isMyTurn && !isRoundOver && state.playedCardsThisTurn < 3 && state.playedCardsThisTurn > 0 && state.lastActionInTurn === 'PLAY' && state.centerRow.length > 0;
+  const canPlayCard = isMyTurn && !isRoundOver && state.playedCardsThisTurn < 3 && state.lastActionInTurn !== 'PLAY';
+  const canFlipCard = isMyTurn && !isRoundOver && state.playedCardsThisTurn < 3 && state.lastActionInTurn !== 'FLIP';
 
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col gap-4">
