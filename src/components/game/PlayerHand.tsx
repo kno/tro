@@ -13,7 +13,7 @@ interface PlayerHandProps {
 export function PlayerHand({ player, onPlayCard, isCurrentPlayer, canPlay }: PlayerHandProps) {
   return (
     <Card className={cn("transition-colors p-2", isCurrentPlayer ? "bg-white" : "bg-card/50")}>
-       <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
+       <div className="flex flex-wrap items-center justify-start gap-x-4 gap-y-2">
             <CardTitle className={cn('text-base font-semibold', isCurrentPlayer ? "text-black" : "text-muted-foreground")}>
                 Tu Mano &ndash; Puntos: {player.discardPile.length}
             </CardTitle>
