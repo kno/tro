@@ -11,7 +11,7 @@ export default function GamePage() {
   return (
     <AuthGuard>
       <div className="min-h-screen w-full bg-background font-body text-foreground p-2 md:p-4">
-        <header className="py-4 px-6 border-b mb-4">
+        <header className="py-4 px-6 border-b mb-4 text-center">
           <h1 className="text-2xl font-bold font-headline text-primary">Arcoíris Táctico Online</h1>
         </header>
         <main>
