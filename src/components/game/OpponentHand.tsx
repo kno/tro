@@ -10,9 +10,8 @@ interface OpponentHandProps {
 export function OpponentHand({ player, isCurrentPlayer }: OpponentHandProps) {
   return (
     <Card className="bg-card/50">
-       <CardHeader>
-        <CardTitle>{player.name} {isCurrentPlayer && "(Su Turno)"}</CardTitle>
-        <CardDescription>Mano del oponente. Las cartas jugadas en la fila central son visibles para ambos.</CardDescription>
+       <CardHeader className='pb-2 pt-4'>
+        <CardTitle className='text-lg'>{player.name} - Puntos: {player.discardPile.length} {isCurrentPlayer && <span className='text-primary'>(Su Turno)</span>}</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="flex justify-center items-start gap-2 md:gap-4 min-h-[15vh] md:min-h-[20vh]">

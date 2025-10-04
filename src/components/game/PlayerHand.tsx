@@ -12,9 +12,8 @@ interface PlayerHandProps {
 export function PlayerHand({ player, onPlayCard, isCurrentPlayer, canPlay }: PlayerHandProps) {
   return (
     <Card className="bg-card/50">
-      <CardHeader>
-        <CardTitle>{player.name} {isCurrentPlayer && "(Tu Turno)"}</CardTitle>
-        <CardDescription>Tu mano</CardDescription>
+      <CardHeader className='pb-2 pt-4'>
+        <CardTitle className='text-lg'>{player.name} - Puntos: {player.discardPile.length} {isCurrentPlayer && <span className='text-primary'>(Tu Turno)</span>}</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="flex justify-center items-end gap-2 md:gap-4 min-h-[15vh] md:min-h-[20vh]">

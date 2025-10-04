@@ -5,12 +5,11 @@ import { createGameReducer, getInitialGameState } from '@/lib/game-logic';
 import { PlayerHand } from './PlayerHand';
 import { OpponentHand } from './OpponentHand';
 import { CenterRow } from './CenterRow';
-import { GameInfoPanel } from './GameInfoPanel';
 import { ActionPanel } from './ActionPanel';
 import { EndGameDialog } from './EndGameDialog';
 import { RoundResultToast } from './RoundResultToast';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useDoc, useFirestore, useUser, useMemoFirebase, FirestorePermissionError, errorEmitter } from '@/firebase';
+import { useDoc, useFirestore, useUser, useMemoFirebase } from '@/firebase/provider';
 import { doc, serverTimestamp, deleteDoc, updateDoc } from 'firebase/firestore';
 import type { Match, GameState, Player } from '@/lib/types';
 import { Loader2 } from 'lucide-react';
@@ -18,17 +17,12 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { useRouter } from 'next/navigation';
 import { isEqual } from 'lodash';
 import { Button } from '@/components/ui/button';
+import { FirestorePermissionError, errorEmitter } from '@/firebase';
 
 function GameLoader() {
   return (
-    <div className="w-full max-w-7xl mx-auto flex flex-col gap-4">
-       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Skeleton className="h-24" />
-        <Skeleton className="h-24" />
-        <Skeleton className="h-24" />
-        <Skeleton className="h-16 md:col-span-3" />
-      </div>
-      <Skeleton className="h-48" />
+    <div className="w-full max-w-7xl mx-auto flex flex-col gap-4 p-4">
+      <Skeleton className="h-24" />
       <Skeleton className="h-48" />
       <Skeleton className="h-48" />
     </div>
@@ -48,19 +42,21 @@ export function GameBoard({ matchId }: GameBoardProps) {
   const matchRef = useMemoFirebase(() => {
     return firestore ? doc(firestore, 'matches', matchId) : null;
   }, [firestore, matchId]);
-
+  
   const { data: match, isLoading: isLoadingMatch } = useDoc<Match>(matchRef);
 
-  const gameReducer = useMemo(() => createGameReducer(matchRef), [matchRef]);
-  const [state, dispatch] = useReducer(gameReducer, null, () => match?.gameState ?? getInitialGameState([]));
+  const gameReducer = useMemo(() => {
+    return createGameReducer(matchRef, user?.uid ?? null)
+  }, [matchRef, user?.uid]);
+
+  const [state, dispatch] = useReducer(gameReducer, match?.gameState ?? getInitialGameState([]));
 
   // Effect to sync remote state (from Firestore) to local state (useReducer)
   useEffect(() => {
     if (match?.gameState && !isEqual(state, match.gameState)) {
         dispatch({ type: 'SET_GAME_STATE', payload: match.gameState });
     }
-  }, [match?.gameState, state]);
-
+  }, [match?.gameState, state]); // dependency on `state` is necessary for the isEqual check
 
   // Player 1 initializes the game state if it's missing (when P2 joins)
   useEffect(() => {
@@ -69,23 +65,22 @@ export function GameBoard({ matchId }: GameBoardProps) {
         
         const player1: Player = {
           id: match.player1Id,
-          name: user.displayName || `Jugador ${user.uid.substring(0, 5)}`,
+          name: `Jugador 1`,
           hand: [],
           discardPile: [],
         };
         const player2: Player = {
           id: match.player2Id,
-          name: `Jugador ${match.player2Id.substring(0, 5)}`,
+          name: `Jugador 2`,
           hand: [],
           discardPile: [],
         };
         const initialState = getInitialGameState([player1, player2]);
         
-        // We call updateDoc here which will trigger the onSnapshot listener,
-        // which will then update the state via the other useEffect.
-        updateDoc(matchRef, { gameState: initialState });
+        // Directly dispatch to update remote state via reducer
+        dispatch({type: 'RESTART_GAME_WITH_STATE', payload: initialState });
     }
-  }, [match, user, matchRef]);
+  }, [match, user, matchRef, dispatch]);
 
 
   const handleCancelMatch = useCallback(async () => {
@@ -109,19 +104,19 @@ export function GameBoard({ matchId }: GameBoardProps) {
 
   const handlePlayCard = useCallback((handIndex: number, isBlind: boolean) => {
     dispatch({ type: 'PLAY_CARD', payload: { handIndex, isBlind } });
-  }, []);
+  }, [dispatch]);
 
   const handleEndTurn = useCallback(() => {
     dispatch({ type: 'END_TURN' });
-  }, []);
+  }, [dispatch]);
 
   const handleNextRound = useCallback(() => {
     dispatch({ type: 'START_NEXT_ROUND' });
-  }, []);
+  }, [dispatch]);
 
   const handleRestart = useCallback(() => {
     dispatch({ type: 'RESTART_GAME' });
-  }, []);
+  }, [dispatch]);
 
   const currentUserId = user?.uid ?? null;
   const { self, opponent } = useMemo(() => {
@@ -133,7 +128,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
   }, [state?.players, currentUserId]);
 
 
-  if (isLoadingMatch || !user) {
+  if (isLoadingMatch || !user || !state) {
     return <GameLoader />;
   }
   
@@ -184,13 +179,13 @@ export function GameBoard({ matchId }: GameBoardProps) {
   }
 
   // If we have a match but no game state yet (e.g. P2 just joined, P1 is creating state), show loader.
-  if (!state || !state.phase) {
+  if (!state.phase) {
     return <GameLoader />;
   }
 
   if (!self || !opponent) {
     return (
-       <div className="flex justify-center items-center h-full text-center text-muted-foreground">
+       <div className="flex justify-center items-center h-full text-center text-muted-foreground p-4">
           <p>Error: No se pudieron cargar los datos de los jugadores. Puede que no formes parte de esta partida.</p>
       </div>
     );
@@ -202,8 +197,6 @@ export function GameBoard({ matchId }: GameBoardProps) {
 
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col gap-4">
-      <GameInfoPanel state={state} />
-
       <OpponentHand player={opponent} isCurrentPlayer={!isMyTurn} />
 
       <CenterRow cards={state.centerRow} />
