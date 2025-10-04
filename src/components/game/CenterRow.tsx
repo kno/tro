@@ -1,15 +1,18 @@
 import type { CenterRowCard } from '@/lib/types';
 import { GameCard } from './GameCard';
 import { Layers } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface CenterRowProps {
   cards: CenterRowCard[];
   deckCount: number;
+  onFlipCard: (index: number) => void;
+  canFlip: boolean;
 }
 
-export function CenterRow({ cards, deckCount }: CenterRowProps) {
+export function CenterRow({ cards, deckCount, onFlipCard, canFlip }: CenterRowProps) {
   return (
-    <div className="relative w-full bg-primary/10 rounded-lg p-4 my-4 min-h-[10vh] md:min-h-[15vh] flex items-center justify-center">
+    <div className="relative w-full bg-primary/10 rounded-lg p-4 my-2 min-h-[10vh]">
       <div className="absolute top-2 left-2 flex items-center gap-2 bg-background/50 backdrop-blur-sm rounded-full px-3 py-1 text-sm font-semibold text-foreground border">
         <Layers className="w-4 h-4" />
         <span>Mazo: {deckCount}</span>
@@ -22,7 +25,11 @@ export function CenterRow({ cards, deckCount }: CenterRowProps) {
               card={card}
               view="center"
               isFaceUp={card.isFaceUp}
-              className="w-20 md:w-28"
+              onClick={canFlip ? () => onFlipCard(index) : undefined}
+              className={cn(
+                "w-20 md:w-28",
+                canFlip && "cursor-pointer ring-4 ring-transparent hover:ring-accent"
+              )}
             />
           ))
         ) : (

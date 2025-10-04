@@ -138,6 +138,7 @@ export function getInitialGameState(players: Player[]): GameState {
     currentPlayerIndex: Math.random() < 0.5 ? 0 : 1,
     turnState: 'PLAYING',
     playedCardsThisTurn: 0,
+    lastActionInTurn: 'NONE',
     roundEndReason: null,
     roundWinnerId: null,
     gameWinnerId: null,
@@ -176,6 +177,7 @@ function isRainbowComplete(centerRow: CenterRowCard[]): boolean {
 export type GameAction =
   | { type: 'SET_GAME_STATE'; payload: GameState }
   | { type: 'PLAY_CARD'; payload: { handIndex: number; isBlind: boolean } }
+  | { type: 'FLIP_CARD'; payload: { centerRowIndex: number } }
   | { type: 'END_TURN' }
   | { type: 'START_NEXT_ROUND' }
   | { type: 'RESTART_GAME' }
@@ -201,7 +203,7 @@ export function createGameReducer(matchRef: DocumentReference | null, currentUse
 
       // Prevent actions from users who are not the current player
       const isMyTurn = state.players[state.currentPlayerIndex]?.id === currentUserId;
-      if (['PLAY_CARD', 'END_TURN'].includes(action.type) && !isMyTurn) {
+      if (['PLAY_CARD', 'FLIP_CARD', 'END_TURN'].includes(action.type) && !isMyTurn) {
         return state;
       }
 
@@ -218,10 +220,11 @@ export function createGameReducer(matchRef: DocumentReference | null, currentUse
         case 'PLAY_CARD': {
           const { handIndex, isBlind } = action.payload;
           const currentPlayer = state.players[state.currentPlayerIndex];
-          const cardToPlay = currentPlayer.hand[handIndex];
           
-          if (!cardToPlay || state.turnState === 'ROUND_OVER' || state.playedCardsThisTurn >= 3) return state;
+          if (!currentPlayer.hand[handIndex] || state.turnState !== 'PLAYING' || state.playedCardsThisTurn >= 3) return state;
+          if (state.lastActionInTurn === 'PLAY') return state; // Can't play twice in a row
 
+          const cardToPlay = currentPlayer.hand[handIndex];
           const newHand = currentPlayer.hand.filter((_, i) => i !== handIndex);
           
           const cardForCenter: Card = { 
@@ -240,12 +243,53 @@ export function createGameReducer(matchRef: DocumentReference | null, currentUse
             : `${currentPlayer.name} jugó un ${newCenterRowCard.frontColor}.`;
             
           const playedCardsThisTurn = state.playedCardsThisTurn + 1;
+          const isFirstAction = state.lastActionInTurn === 'NONE';
 
-          const tempState: GameState = {
+          let tempState: GameState = {
             ...state,
             players: state.players.map((p, i) => i === state.currentPlayerIndex ? { ...p, hand: newHand } : p),
             centerRow: [...state.centerRow, newCenterRowCard],
-            playedCardsThisTurn: playedCardsThisTurn,
+            playedCardsThisTurn,
+            lastActionInTurn: 'PLAY',
+            lastActionLog: logMessage
+          };
+          
+          // If it's the first action and it's a play, the turn ends immediately.
+          if (isFirstAction) {
+            tempState = endTurn(tempState, true); // Pass true to indicate an immediate turn end
+          }
+          
+          const { state: rowState, color: duplicateColor } = checkRowState(tempState.centerRow);
+          
+          if (rowState === 'BLACK_CARD') {
+            return { ...tempState, turnState: 'ROUND_OVER', roundEndReason: 'BLACK_CARD', lastActionLog: `${currentPlayer.name} reveló una carta Negra y perdió la ronda.` };
+          } else if (rowState === 'DUPLICATE_COLOR') {
+            return { ...tempState, turnState: 'ROUND_OVER', roundEndReason: 'DUPLICATE_COLOR', lastActionLog: `${currentPlayer.name} reveló un color repetido (${duplicateColor}) y perdió la ronda.` };
+          } else if (isRainbowComplete(tempState.centerRow)) {
+            return { ...tempState, turnState: 'ROUND_OVER', roundEndReason: 'RAINBOW_COMPLETE', lastActionLog: `${currentPlayer.name} completó un ARCOÍRIS!` };
+          } else {
+            return tempState;
+          }
+        }
+        
+        case 'FLIP_CARD': {
+          const { centerRowIndex } = action.payload;
+          const currentPlayer = state.players[state.currentPlayerIndex];
+
+          if (state.turnState !== 'PLAYING' || state.playedCardsThisTurn >= 3) return state;
+          if (state.lastActionInTurn === 'FLIP' || state.lastActionInTurn === 'NONE') return state; // Can't flip twice or as first action
+
+          const newCenterRow = [...state.centerRow];
+          const cardToFlip = newCenterRow[centerRowIndex];
+          if (!cardToFlip) return state;
+
+          cardToFlip.isFaceUp = !cardToFlip.isFaceUp;
+          const logMessage = `${currentPlayer.name} volteó una carta en la fila.`;
+          
+          let tempState: GameState = {
+            ...state,
+            centerRow: newCenterRow,
+            lastActionInTurn: 'FLIP',
             lastActionLog: logMessage
           };
           
@@ -258,17 +302,13 @@ export function createGameReducer(matchRef: DocumentReference | null, currentUse
           } else if (isRainbowComplete(tempState.centerRow)) {
             return { ...tempState, turnState: 'ROUND_OVER', roundEndReason: 'RAINBOW_COMPLETE', lastActionLog: `${currentPlayer.name} completó un ARCOÍRIS!` };
           } else {
-             // Check if the turn ends automatically after 3 cards
-            if (playedCardsThisTurn === 3) {
-                return endTurn(tempState);
-            }
             return tempState;
           }
         }
 
         case 'END_TURN': {
           if (state.playedCardsThisTurn === 0) return state; // Prevent ending turn without playing a card
-          return endTurn(state);
+          return endTurn(state, false);
         }
 
         case 'START_NEXT_ROUND': {
@@ -303,7 +343,7 @@ export function createGameReducer(matchRef: DocumentReference | null, currentUse
             // Timer ticks don't need to be persisted to Firestore, so we return early without updating remote.
             return { ...state, turnTimer: state.turnTimer - 1 };
           } else {
-            return endTurn({ ...state, lastActionLog: `${state.players[state.currentPlayerIndex].name} se quedó sin tiempo. Turno finalizado.` });
+            return endTurn({ ...state, lastActionLog: `${state.players[state.currentPlayerIndex].name} se quedó sin tiempo. Turno finalizado.` }, false);
           }
         }
 
@@ -326,13 +366,14 @@ export function createGameReducer(matchRef: DocumentReference | null, currentUse
 }
 
 
-function endTurn(state: GameState): GameState {
+function endTurn(state: GameState, isImmediate: boolean): GameState {
   const newDeck = [...state.deck];
   const newPlayers = JSON.parse(JSON.stringify(state.players));
   const currentPlayer = newPlayers[state.currentPlayerIndex];
   let isGameOver = false;
 
-  const cardsToDraw = state.playedCardsThisTurn;
+  // Only draw if the turn is ending normally, not from an immediate play.
+  const cardsToDraw = isImmediate ? 0 : state.playedCardsThisTurn;
   for (let i = 0; i < cardsToDraw; i++) {
     if (newDeck.length > 0) {
       currentPlayer.hand.push(newDeck.pop()!);
@@ -344,6 +385,8 @@ function endTurn(state: GameState): GameState {
   
   const logMessage = state.lastActionLog.includes('tiempo') 
     ? state.lastActionLog 
+    : isImmediate
+    ? `${state.lastActionLog} Fin del turno.`
     : `${currentPlayer.name} terminó su turno.`;
 
   const nextPlayerIndex = ((state.currentPlayerIndex + 1) % 2) as 0 | 1;
@@ -355,6 +398,7 @@ function endTurn(state: GameState): GameState {
     currentPlayerIndex: nextPlayerIndex,
     turnState: 'PLAYING',
     playedCardsThisTurn: 0,
+    lastActionInTurn: 'NONE',
     lastActionLog: `${logMessage} Turno de ${newPlayers[nextPlayerIndex].name}.`,
     turnTimer: TURN_TIME_SECONDS,
   };
@@ -411,6 +455,7 @@ function startNextRound(state: GameState): GameState {
       currentPlayerIndex: nextPlayerIndex as 0 | 1,
       turnState: 'PLAYING',
       playedCardsThisTurn: 0,
+      lastActionInTurn: 'NONE',
       roundEndReason: null,
       roundWinnerId,
       lastActionLog: `${newPlayers[roundWinnerIndex].name} ganó la ronda. ${newPlayers[nextPlayerIndex].name} empieza.`,

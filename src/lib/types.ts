@@ -24,6 +24,7 @@ export type TurnState = 'PLAYING' | 'ROUND_OVER';
 export type RowState = 'VALID' | 'DUPLICATE_COLOR' | 'BLACK_CARD';
 export type GamePhase = 'LOBBY' | 'PLAYING' | 'GAME_OVER';
 export type RoundEndReason = 'DUPLICATE_COLOR' | 'BLACK_CARD' | 'RAINBOW_COMPLETE' | null;
+export type LastActionInTurn = 'NONE' | 'PLAY' | 'FLIP';
 
 export interface GameState {
   phase: GamePhase;
@@ -33,6 +34,7 @@ export interface GameState {
   currentPlayerIndex: 0 | 1;
   turnState: TurnState;
   playedCardsThisTurn: number;
+  lastActionInTurn: LastActionInTurn;
   roundEndReason: RoundEndReason;
   roundWinnerId: string | null;
   gameWinnerId: string | null;

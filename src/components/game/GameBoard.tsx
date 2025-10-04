@@ -128,6 +128,10 @@ export function GameBoard({ matchId }: GameBoardProps) {
   const handlePlayCard = useCallback((handIndex: number, isBlind: boolean) => {
     dispatch({ type: 'PLAY_CARD', payload: { handIndex, isBlind } });
   }, [dispatch]);
+  
+  const handleFlipCard = useCallback((centerRowIndex: number) => {
+    dispatch({ type: 'FLIP_CARD', payload: { centerRowIndex }});
+  }, [dispatch]);
 
   const handleEndTurn = useCallback(() => {
     dispatch({ type: 'END_TURN' });
@@ -217,20 +221,27 @@ export function GameBoard({ matchId }: GameBoardProps) {
   }
 
   const isMyTurn = state.players[state.currentPlayerIndex]?.id === self.id;
-  const canPlay = isMyTurn && state.turnState === 'PLAYING' && state.playedCardsThisTurn < 3;
   const isRoundOver = state.turnState === 'ROUND_OVER';
+
+  const canPlayCard = isMyTurn && !isRoundOver && state.playedCardsThisTurn < 3 && (state.lastActionInTurn === 'NONE' || state.lastActionInTurn === 'FLIP');
+  const canFlipCard = isMyTurn && !isRoundOver && state.playedCardsThisTurn < 3 && state.playedCardsThisTurn > 0 && state.lastActionInTurn === 'PLAY' && state.centerRow.length > 0;
 
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col gap-4">
       <OpponentHand player={opponent} isCurrentPlayer={!isMyTurn} />
 
-      <CenterRow cards={state.centerRow} deckCount={state.deck.length} />
+      <CenterRow 
+        cards={state.centerRow} 
+        deckCount={state.deck.length}
+        onFlipCard={handleFlipCard}
+        canFlip={canFlipCard}
+      />
 
       <PlayerHand 
         player={self} 
         onPlayCard={handlePlayCard} 
         isCurrentPlayer={isMyTurn} 
-        canPlay={canPlay}
+        canPlay={canPlayCard}
       />
       
       <ActionPanel 
