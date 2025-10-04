@@ -61,11 +61,13 @@ export function GameBoard({ matchId }: GameBoardProps) {
   }, [match?.gameState, dispatch]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
-  // Player 1 initializes the game state if it's missing (when P2 joins)
+  // Player 1 initializes the game state if it's missing (e.g., when P2 joins)
+  // This effect MUST run independently of the main component render logic.
   useEffect(() => {
     if (match && user && match.status === 'PLAYING' && !match.gameState && user.uid === match.player1Id) {
         if (!matchRef) return;
         
+        console.log("Player 1 is initializing the game state...");
         const player1: Player = {
           id: match.player1Id,
           name: `Jugador 1`,
@@ -80,7 +82,8 @@ export function GameBoard({ matchId }: GameBoardProps) {
         };
         const initialState = getInitialGameState([player1, player2]);
         
-        // Directly dispatch to update remote state via reducer
+        // Directly dispatch to update remote state via reducer.
+        // The reducer will handle the updateDoc call.
         dispatch({type: 'RESTART_GAME_WITH_STATE', payload: initialState });
     }
   }, [match, user, matchRef, dispatch]);
@@ -131,6 +134,8 @@ export function GameBoard({ matchId }: GameBoardProps) {
   }, [state?.players, currentUserId]);
 
 
+  // Primary loading condition.
+  // Show loader if we're fetching the match, or if the match is in PLAYING state but gameState hasn't been created yet.
   if (isLoadingMatch || !user || !match || (match.status === 'PLAYING' && !match.gameState)) {
     return <GameLoader />;
   }
@@ -182,7 +187,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
   }
 
   // If we have a match but no game state yet (e.g. P2 just joined, P1 is creating state), show loader.
-  if (!state.phase) {
+  if (!state || !state.phase) {
     return <GameLoader />;
   }
 
