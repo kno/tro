@@ -168,13 +168,7 @@ function checkRowState(centerRow: CenterRowCard[]): { state: RowState; color?: C
 }
 
 function isRainbowComplete(centerRow: CenterRowCard[]): boolean {
-  const uniqueColors = new Set<Color>();
-  centerRow.forEach(card => {
-    if (card.isFaceUp && card.frontColor !== 'White' && card.frontColor !== 'Black') {
-      uniqueColors.add(card.frontColor);
-    }
-  });
-  return uniqueColors.size >= 6;
+  return centerRow.length >= 6;
 }
 
 
