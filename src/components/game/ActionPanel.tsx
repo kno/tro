@@ -10,8 +10,8 @@ interface ActionPanelProps {
 }
 
 export function ActionPanel({ state, onEndTurn, isMyTurn, player }: ActionPanelProps) {
-  const { turnState } = state;
-  const canEndTurn = isMyTurn && turnState === 'PLAYING';
+  const { turnState, playedCardsThisTurn } = state;
+  const canEndTurn = isMyTurn && turnState === 'PLAYING' && playedCardsThisTurn > 0;
   
   return (
     <UICard className="mt-4">
@@ -21,7 +21,7 @@ export function ActionPanel({ state, onEndTurn, isMyTurn, player }: ActionPanelP
           disabled={!canEndTurn}
           variant="secondary"
         >
-          Terminar Turno / Pasar
+          Terminar Turno
         </Button>
       </CardContent>
     </UICard>

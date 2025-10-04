@@ -267,6 +267,7 @@ export function createGameReducer(matchRef: DocumentReference | null, currentUse
         }
 
         case 'END_TURN': {
+          if (state.playedCardsThisTurn === 0) return state; // Prevent ending turn without playing a card
           return endTurn(state);
         }
 
@@ -330,24 +331,20 @@ function endTurn(state: GameState): GameState {
   const newPlayers = JSON.parse(JSON.stringify(state.players));
   const currentPlayer = newPlayers[state.currentPlayerIndex];
   let isGameOver = false;
-  let logMessage = state.lastActionLog;
-  let newCenterRow = [...state.centerRow];
 
-  if (state.playedCardsThisTurn > 0) {
-      const cardsToDraw = state.playedCardsThisTurn;
-      for (let i = 0; i < cardsToDraw; i++) {
-        if (newDeck.length > 0) {
-          currentPlayer.hand.push(newDeck.pop()!);
-        } else {
-          isGameOver = true;
-          break;
-        }
-      }
-      logMessage = state.lastActionLog.includes('tiempo') ? state.lastActionLog : `${currentPlayer.name} terminó su turno.`;
-  } else {
-      newCenterRow = state.centerRow.map(card => ({...card, isFaceUp: false}));
-      logMessage = `${currentPlayer.name} ha pasado el turno. Las cartas de la fila se han volteado.`;
+  const cardsToDraw = state.playedCardsThisTurn;
+  for (let i = 0; i < cardsToDraw; i++) {
+    if (newDeck.length > 0) {
+      currentPlayer.hand.push(newDeck.pop()!);
+    } else {
+      isGameOver = true;
+      break;
+    }
   }
+  
+  const logMessage = state.lastActionLog.includes('tiempo') 
+    ? state.lastActionLog 
+    : `${currentPlayer.name} terminó su turno.`;
 
   const nextPlayerIndex = ((state.currentPlayerIndex + 1) % 2) as 0 | 1;
   
@@ -355,7 +352,6 @@ function endTurn(state: GameState): GameState {
     ...state,
     deck: newDeck,
     players: newPlayers,
-    centerRow: newCenterRow,
     currentPlayerIndex: nextPlayerIndex,
     turnState: 'PLAYING',
     playedCardsThisTurn: 0,
