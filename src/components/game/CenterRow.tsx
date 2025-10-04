@@ -9,7 +9,7 @@ interface CenterRowProps {
 
 export function CenterRow({ cards, deckCount }: CenterRowProps) {
   return (
-    <div className="relative w-full bg-primary/10 rounded-lg p-4 my-4 min-h-[20vh] md:min-h-[25vh] flex items-center justify-center">
+    <div className="relative w-full bg-primary/10 rounded-lg p-4 my-4 min-h-[10vh] md:min-h-[15vh] flex items-center justify-center">
       <div className="absolute top-2 left-2 flex items-center gap-2 bg-background/50 backdrop-blur-sm rounded-full px-3 py-1 text-sm font-semibold text-foreground border">
         <Layers className="w-4 h-4" />
         <span>Mazo: {deckCount}</span>
