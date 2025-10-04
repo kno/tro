@@ -1,7 +1,6 @@
-import type { Card, CenterRowCard, GameState, Player } from '@/lib/types';
+import type { GameState, Player } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card as UICard, CardContent } from '@/components/ui/card';
-import { AIAdvisor } from './AIAdvisor';
 
 interface ActionPanelProps {
   state: GameState;
@@ -11,7 +10,7 @@ interface ActionPanelProps {
 }
 
 export function ActionPanel({ state, onEndTurn, isMyTurn, player }: ActionPanelProps) {
-  const { turnState, centerRow } = state;
+  const { turnState } = state;
   const canEndTurn = isMyTurn && turnState === 'PLAYING';
   
   return (
@@ -24,11 +23,6 @@ export function ActionPanel({ state, onEndTurn, isMyTurn, player }: ActionPanelP
         >
           Terminar Turno / Pasar
         </Button>
-        <AIAdvisor 
-          hand={player.hand}
-          centerRow={centerRow}
-          disabled={!canEndTurn}
-        />
       </CardContent>
     </UICard>
   );
