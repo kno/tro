@@ -1,6 +1,7 @@
 import type { Player } from '@/lib/types';
 import { GameCard } from './GameCard';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 
 interface PlayerHandProps {
   player: Player;
@@ -11,9 +12,11 @@ interface PlayerHandProps {
 
 export function PlayerHand({ player, onPlayCard, isCurrentPlayer, canPlay }: PlayerHandProps) {
   return (
-    <Card className="bg-card/50">
+    <Card className={cn("transition-colors", isCurrentPlayer ? "bg-card" : "bg-card/50")}>
       <CardHeader className='pb-2 pt-4'>
-        <CardTitle className='text-lg'>{player.name} - Puntos: {player.discardPile.length} {isCurrentPlayer && <span className='text-primary'>(Tu Turno)</span>}</CardTitle>
+        <CardTitle className={cn('text-lg', isCurrentPlayer ? "text-card-foreground" : "")}>
+            {player.name} - Puntos: {player.discardPile.length}
+        </CardTitle>
       </CardHeader>
       <CardContent>
         <div className="flex justify-center items-end gap-2 md:gap-4 min-h-[15vh] md:min-h-[20vh]">

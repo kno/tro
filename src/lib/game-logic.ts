@@ -48,12 +48,6 @@ function createDeck(): Card[] {
       colors.push(color);
     }
   });
-
-  // Fisher-Yates shuffle for a random initial order
-  for (let i = colors.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [colors[i], colors[j]] = [colors[j], colors[i]];
-  }
   
   const frontColors = [...colors];
   const backColors = [...colors].sort(() => 0.5 - Math.random());
@@ -61,36 +55,32 @@ function createDeck(): Card[] {
   // Ensure no card has the same front and back color
   for (let i = 0; i < frontColors.length; i++) {
     if (frontColors[i] === backColors[i]) {
-      // Find a card to swap with
-      let swapIndex = -1;
-      
+      let swapped = false;
       // Look forward for a suitable swap
       for (let j = i + 1; j < frontColors.length; j++) {
         // A suitable swap is one where:
         // 1. The back color at j is not the same as the front color at i
         // 2. The back color at i (which is the same as front color at i) is not the same as the front color at j
         if (backColors[j] !== frontColors[i] && backColors[i] !== frontColors[j]) {
-          swapIndex = j;
+          [backColors[i], backColors[j]] = [backColors[j], backColors[i]];
+          swapped = true;
           break;
         }
       }
 
-      // If no suitable swap found going forward, look backward (less likely but a good fallback)
-      if (swapIndex === -1) {
+      // If no suitable swap found going forward, look backward
+      if (!swapped) {
         for (let j = 0; j < i; j++) {
            if (backColors[j] !== frontColors[i] && backColors[i] !== frontColors[j]) {
-             swapIndex = j;
+             [backColors[i], backColors[j]] = [backColors[j], backColors[i]];
+             swapped = true;
              break;
            }
         }
       }
-
-      if (swapIndex !== -1) {
-        [backColors[i], backColors[swapIndex]] = [backColors[swapIndex], backColors[i]];
-      } else {
-         // This case is extremely unlikely with a shuffled deck of this size,
-         // but as a last resort, we'll swap with the next card, even if it creates a new conflict
-         // which the next loop iteration might fix.
+      
+      // As a last resort if all else fails (highly improbable)
+      if (!swapped) {
          const nextIndex = (i + 1) % backColors.length;
          [backColors[i], backColors[nextIndex]] = [backColors[nextIndex], backColors[i]];
       }
@@ -116,11 +106,12 @@ function createDeck(): Card[] {
 export function getInitialGameState(players: Player[]): GameState {
   const initialDeck = createDeck();
   
-  const validatedPlayers = players.map(p => {
-      if (!p || !p.id || !p.name) {
+  const validatedPlayers = players.map((p, index) => {
+      if (!p || !p.id) {
           throw new Error("Invalid player object provided to getInitialGameState");
       }
-      return { ...p, hand: [], discardPile: [] };
+      // Assign names here to ensure consistency
+      return { id: p.id, name: `Jugador ${index + 1}`, hand: [], discardPile: [] };
   });
   
   validatedPlayers.forEach(player => {
@@ -183,6 +174,7 @@ function isRainbowComplete(centerRow: CenterRowCard[]): boolean {
 // --- REDUCER ---
 export type GameAction =
   | { type: 'SET_GAME_STATE'; payload: GameState }
+  | { type: 'RESTART_GAME_WITH_STATE'; payload: GameState }
   | { type: 'PLAY_CARD'; payload: { handIndex: number; isBlind: boolean } }
   | { type: 'END_TURN' }
   | { type: 'START_NEXT_ROUND' }
@@ -192,20 +184,27 @@ export type GameAction =
 
 // We pass matchRef to the reducer so it can trigger remote updates.
 // This moves the responsibility of updating Firestore out of the component's useEffect.
-export function createGameReducer(matchRef: DocumentReference | null) {
+export function createGameReducer(matchRef: DocumentReference | null, currentUserId: string | null) {
   const reducer = (state: GameState, action: GameAction): GameState => {
     let newState: GameState | null = null;
 
     // The main logic is wrapped in a function to avoid duplicating the remote update call.
     const computeNewState = (): GameState | null => {
-      if (action.type === 'SET_GAME_STATE') {
+      if (action.type === 'SET_GAME_STATE' || action.type === 'RESTART_GAME_WITH_STATE') {
         // This action is only for syncing remote state to local, so we don't update remote.
         return action.payload;
       }
       
-      if (!state || !state.phase) {
+      if (!state || !state.phase || !currentUserId) {
         return state;
       }
+
+      // Prevent actions from users who are not the current player
+      const isMyTurn = state.players[state.currentPlayerIndex]?.id === currentUserId;
+      if (['PLAY_CARD', 'END_TURN'].includes(action.type) && !isMyTurn) {
+        return state;
+      }
+
 
       if (state.phase !== 'PLAYING') {
         if (action.type === 'RESTART_GAME' && state.players.length === 2) {
@@ -259,7 +258,7 @@ export function createGameReducer(matchRef: DocumentReference | null) {
           } else if (isRainbowComplete(tempState.centerRow)) {
             return { ...tempState, turnState: 'ROUND_OVER', roundEndReason: 'RAINBOW_COMPLETE', lastActionLog: `${currentPlayer.name} completó un ARCOÍRIS!` };
           } else {
-            // Check if the turn ends automatically
+             // Check if the turn ends automatically after 3 cards
             if (playedCardsThisTurn === 3) {
                 return endTurn(tempState);
             }
@@ -273,6 +272,18 @@ export function createGameReducer(matchRef: DocumentReference | null) {
 
         case 'START_NEXT_ROUND': {
           if (!state.roundEndReason) return state;
+
+          // Only the next player to act can start the round
+          let nextPlayerToActIndex;
+          if (state.roundEndReason === 'RAINBOW_COMPLETE') {
+              nextPlayerToActIndex = 1 - state.currentPlayerIndex;
+          } else { // DUPLICATE_COLOR or BLACK_CARD
+              nextPlayerToActIndex = state.currentPlayerIndex;
+          }
+          if (state.players[nextPlayerToActIndex].id !== currentUserId) {
+              return state;
+          }
+
           return startNextRound(state);
         }
         
@@ -303,7 +314,7 @@ export function createGameReducer(matchRef: DocumentReference | null) {
     newState = computeNewState();
     
     // After the new state is calculated, update the remote state if it changed and it's not a timer tick
-    if (newState && newState !== state && action.type !== 'SET_GAME_STATE' && action.type !== 'TICK_TIMER') {
+    if (newState && newState !== state && action.type !== 'TICK_TIMER' && (action.type !== 'SET_GAME_STATE' && action.type !== 'RESTART_GAME_WITH_STATE')) {
       updateRemoteState(matchRef, newState);
     }
     
@@ -440,5 +451,3 @@ function checkGameOver(state: GameState): GameState {
       lastActionLog: isTie ? `¡Empate!` : `Fin de la partida. ¡${winnerId === state.players[0].id ? state.players[0].name : state.players[1].name} gana!`,
     }
 }
-
-    
