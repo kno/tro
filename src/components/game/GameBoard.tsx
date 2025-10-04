@@ -9,7 +9,7 @@ import { ActionPanel } from './ActionPanel';
 import { EndGameDialog } from './EndGameDialog';
 import { RoundResultToast } from './RoundResultToast';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useDoc, useFirestore, useUser, useMemoFirebase } from '@/firebase/provider';
+import { useDoc, useFirestore, useUser, useMemoFirebase, errorEmitter, FirestorePermissionError } from '@/firebase';
 import { doc, serverTimestamp, deleteDoc, updateDoc } from 'firebase/firestore';
 import type { Match, GameState, Player } from '@/lib/types';
 import { Loader2 } from 'lucide-react';
@@ -17,7 +17,6 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { useRouter } from 'next/navigation';
 import { isEqual } from 'lodash';
 import { Button } from '@/components/ui/button';
-import { FirestorePermissionError, errorEmitter } from '@/firebase';
 
 function GameLoader() {
   return (
@@ -46,17 +45,21 @@ export function GameBoard({ matchId }: GameBoardProps) {
   const { data: match, isLoading: isLoadingMatch } = useDoc<Match>(matchRef);
 
   const gameReducer = useMemo(() => {
-    return createGameReducer(matchRef, user?.uid ?? null)
+    // The reducer needs the matchRef to perform Firestore updates.
+    return createGameReducer(matchRef, user?.uid ?? null);
   }, [matchRef, user?.uid]);
 
   const [state, dispatch] = useReducer(gameReducer, match?.gameState ?? getInitialGameState([]));
 
-  // Effect to sync remote state (from Firestore) to local state (useReducer)
+  // This effect is crucial for syncing the remote state from Firestore to the local state of the reducer.
   useEffect(() => {
     if (match?.gameState && !isEqual(state, match.gameState)) {
         dispatch({ type: 'SET_GAME_STATE', payload: match.gameState });
     }
-  }, [match?.gameState, state]); // dependency on `state` is necessary for the isEqual check
+    // DO NOT add `state` to dependencies. It will cause an infinite loop.
+    // We only want to sync from remote to local when the remote `match` object changes.
+  }, [match?.gameState]); // eslint-disable-line react-hooks/exhaustive-deps
+
 
   // Player 1 initializes the game state if it's missing (when P2 joins)
   useEffect(() => {
