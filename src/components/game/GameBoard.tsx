@@ -223,8 +223,8 @@ export function GameBoard({ matchId }: GameBoardProps) {
   const isMyTurn = state.players[state.currentPlayerIndex]?.id === self.id;
   const isRoundOver = state.turnState === 'ROUND_OVER';
 
-  const canPlayCard = isMyTurn && !isRoundOver && state.playedCardsThisTurn < 3 && state.lastActionInTurn !== 'PLAY';
-  const canFlipCard = isMyTurn && !isRoundOver && state.playedCardsThisTurn < 3 && state.lastActionInTurn !== 'FLIP';
+  const canPlayCard = isMyTurn && !isRoundOver && state.playedCardsThisTurn < 3 && (state.lastActionInTurn === 'NONE' || state.lastActionInTurn === 'FLIP');
+  const canFlipCard = isMyTurn && !isRoundOver && state.playedCardsThisTurn < 3 && (state.lastActionInTurn === 'NONE' || state.lastActionInTurn === 'PLAY');
 
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col gap-4">

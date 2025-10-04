@@ -281,7 +281,8 @@ export function createGameReducer(matchRef: DocumentReference | null, currentUse
           const { centerRowIndex } = action.payload;
           const currentPlayer = state.players[state.currentPlayerIndex];
 
-          if (state.turnState !== 'PLAYING') return state;
+          if (state.turnState !== 'PLAYING' || state.playedCardsThisTurn >= 3) return state;
+          
           // Can only flip if it's the first action or after playing a card
           if (state.lastActionInTurn !== 'NONE' && state.lastActionInTurn !== 'PLAY') return state;
 
