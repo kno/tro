@@ -10,9 +10,9 @@ interface OpponentHandProps {
 
 export function OpponentHand({ player, isCurrentPlayer }: OpponentHandProps) {
   return (
-    <Card className={cn("transition-colors", isCurrentPlayer ? "bg-card" : "bg-card/50")}>
+    <Card className={cn("transition-colors", isCurrentPlayer ? "bg-background" : "bg-card/50")}>
        <CardHeader className='pb-2 pt-4'>
-        <CardTitle className={cn('text-lg', isCurrentPlayer ? "text-card-foreground" : "")}>
+        <CardTitle className={cn('text-lg', isCurrentPlayer ? "text-foreground" : "text-muted-foreground")}>
           {player.name} - Puntos: {player.discardPile.length}
         </CardTitle>
       </CardHeader>
