@@ -205,7 +205,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
             roundEndToastId.current = null;
         }
     }
-  }, [state.turnState, state.roundEndReason, state.currentPlayerIndex, state.players, user, toast, handleNextRound, dismiss]);
+  }, [state.turnState, state.roundEndReason, state.currentPlayerIndex, user, toast, handleNextRound, dismiss]);
 
 
   const currentUserId = user?.uid ?? null;
@@ -287,7 +287,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
   const isRoundOver = state.turnState === 'ROUND_OVER';
 
   const canPlayCard = isMyTurn && !isRoundOver && state.playedCardsThisTurn < 3 && (state.lastActionInTurn === 'NONE' || state.lastActionInTurn === 'FLIP');
-  const canFlipCard = isMyTurn && !isRoundOver && (state.lastActionInTurn === 'NONE' || state.lastActionInTurn === 'PLAY');
+  const canFlipCard = isMyTurn && !isRoundOver && state.playedCardsThisTurn < 3 && state.lastActionInTurn !== 'FLIP';
 
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col gap-4">
