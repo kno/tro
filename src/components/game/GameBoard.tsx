@@ -150,6 +150,8 @@ export function GameBoard({ matchId }: GameBoardProps) {
   }, [dispatch]);
   
   useEffect(() => {
+    let timeoutId: NodeJS.Timeout | null = null;
+  
     if (state.turnState === 'ROUND_OVER' && state.roundEndReason && user) {
         const { roundEndReason, players, currentPlayerIndex } = state;
         
@@ -188,29 +190,44 @@ export function GameBoard({ matchId }: GameBoardProps) {
                     Siguiente Ronda
                 </ToastAction>
             ) : undefined,
-            onOpenChange: (open) => {
-                // If the toast is closing and it was my turn to act, trigger the next round.
-                if (!open && isMyTurnToAct) {
-                    handleNextRound();
-                }
-            },
         });
         roundEndToastId.current = id;
+        
+        // If it's my turn to act, set a timeout to automatically proceed
+        // if the user doesn't click the button.
+        if (isMyTurnToAct) {
+            timeoutId = setTimeout(() => {
+                // Before dispatching, check if the round is still over.
+                // This prevents acting if the component unmounted or state changed.
+                if (roundEndToastId.current === id) {
+                    handleNextRound();
+                }
+            }, 5000);
+        }
     }
     
-    // Cleanup function to dismiss the toast if the round is no longer over
+    // Cleanup function
     return () => {
-        if (state.turnState !== 'ROUND_OVER' && roundEndToastId.current) {
-            dismiss(roundEndToastId.current);
-            roundEndToastId.current = null;
-        }
+      // Clear the timeout if the component unmounts or dependencies change
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      
+      // Dismiss the toast if the round is no longer over when dependencies change.
+      if (state.turnState !== 'ROUND_OVER' && roundEndToastId.current) {
+        dismiss(roundEndToastId.current);
+        roundEndToastId.current = null;
+      }
     }
   }, [state.turnState, state.roundEndReason, state.currentPlayerIndex, user, toast, handleNextRound, dismiss]);
 
 
   const currentUserId = user?.uid ?? null;
   const { self, opponent } = useMemo(() => {
-    const players = state?.players ?? [];
+    if (!state?.players || state.players.length < 2) {
+      return { self: undefined, opponent: undefined };
+    }
+    const players = state.players;
     return {
       self: currentUserId ? players.find(p => p.id === currentUserId) : undefined,
       opponent: currentUserId ? players.find(p => p.id !== currentUserId) : undefined,
