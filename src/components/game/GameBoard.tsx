@@ -181,7 +181,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
                 </div>
             ),
             description: description,
-            duration: Infinity, // Keep toast until action is taken
+            duration: 5000,
             action: isMyTurnToAct ? (
                 <ToastAction altText="Siguiente Ronda" onClick={handleNextRound}>
                     Siguiente Ronda
