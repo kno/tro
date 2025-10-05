@@ -152,11 +152,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
   useEffect(() => {
     let timeoutId: NodeJS.Timeout | null = null;
   
-    if (state.turnState === 'ROUND_OVER' && state.roundEndReason && user) {
-        if (roundEndToastId.current) {
-            dismiss(roundEndToastId.current);
-        }
-
+    if (state.turnState === 'ROUND_OVER' && state.roundEndReason && user && !roundEndToastId.current) {
         const { roundEndReason, players, currentPlayerIndex } = state;
         
         let winnerIndex: number;
