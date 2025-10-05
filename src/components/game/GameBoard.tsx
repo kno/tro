@@ -153,6 +153,10 @@ export function GameBoard({ matchId }: GameBoardProps) {
     let timeoutId: NodeJS.Timeout | null = null;
   
     if (state.turnState === 'ROUND_OVER' && state.roundEndReason && user) {
+        if (roundEndToastId.current) {
+            dismiss(roundEndToastId.current);
+        }
+
         const { roundEndReason, players, currentPlayerIndex } = state;
         
         let winnerIndex: number;
@@ -174,7 +178,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
             ? '¡Arcoíris Completado!' 
             : '¡Ronda Perdida!';
 
-        const description = `${winner.name} gana las cartas de la fila. ${!isMyTurnToAct ? `Esperando a ${nextPlayerToAct.name}...` : ''}`;
+        const description = `${winner?.name || 'Un jugador'} gana las cartas de la fila. ${!isMyTurnToAct ? `Esperando a ${nextPlayerToAct?.name || 'oponente'}...` : ''}`;
 
         const { id } = toast({
             title: (
@@ -193,27 +197,19 @@ export function GameBoard({ matchId }: GameBoardProps) {
         });
         roundEndToastId.current = id;
         
-        // If it's my turn to act, set a timeout to automatically proceed
-        // if the user doesn't click the button.
         if (isMyTurnToAct) {
             timeoutId = setTimeout(() => {
-                // Before dispatching, check if the round is still over.
-                // This prevents acting if the component unmounted or state changed.
-                if (roundEndToastId.current === id) {
+                if (roundEndToastId.current === id) { // Only act if this toast is still the active one
                     handleNextRound();
                 }
             }, 5000);
         }
     }
     
-    // Cleanup function
     return () => {
-      // Clear the timeout if the component unmounts or dependencies change
       if (timeoutId) {
         clearTimeout(timeoutId);
       }
-      
-      // Dismiss the toast if the round is no longer over when dependencies change.
       if (state.turnState !== 'ROUND_OVER' && roundEndToastId.current) {
         dismiss(roundEndToastId.current);
         roundEndToastId.current = null;

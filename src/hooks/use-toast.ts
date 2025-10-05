@@ -8,8 +8,8 @@ import type {
   ToastProps,
 } from "@/components/ui/toast"
 
-const TOAST_LIMIT = 1
-const TOAST_REMOVE_DELAY = 1000000
+const TOAST_LIMIT = 3
+const TOAST_REMOVE_DELAY = 5000 // Toasts are removed after 5s
 
 type ToasterToast = ToastProps & {
   id: string
@@ -93,8 +93,6 @@ export const reducer = (state: State, action: Action): State => {
     case "DISMISS_TOAST": {
       const { toastId } = action
 
-      // ! Side effects ! - This could be extracted into a dismissToast() action,
-      // but I'll keep it here for simplicity
       if (toastId) {
         addToRemoveQueue(toastId)
       } else {
@@ -158,9 +156,6 @@ function toast({ ...props }: Toast) {
       ...props,
       id,
       open: true,
-      onOpenChange: (open) => {
-        if (!open) dismiss()
-      },
     },
   })
 
