@@ -150,17 +150,17 @@ export function GameBoard({ matchId }: GameBoardProps) {
   
   useEffect(() => {
     if (state.turnState === 'ROUND_OVER' && state.roundEndReason && user) {
-        const { roundEndReason, players } = state;
+        const { roundEndReason, players, currentPlayerIndex } = state;
         
         let winnerIndex: number;
         let nextPlayerToActIndex: number;
 
         if (roundEndReason === 'RAINBOW_COMPLETE') {
-            winnerIndex = state.currentPlayerIndex;
+            winnerIndex = currentPlayerIndex;
             nextPlayerToActIndex = 1 - winnerIndex;
         } else {
-            winnerIndex = 1 - state.currentPlayerIndex;
-            nextPlayerToActIndex = state.currentPlayerIndex;
+            winnerIndex = 1 - currentPlayerIndex;
+            nextPlayerToActIndex = currentPlayerIndex;
         }
 
         const winner = players[winnerIndex];
@@ -187,6 +187,12 @@ export function GameBoard({ matchId }: GameBoardProps) {
                     Siguiente Ronda
                 </ToastAction>
             ) : undefined,
+            onOpenChange: (open) => {
+                // If the toast is closing and it was my turn to act, trigger the next round.
+                if (!open && isMyTurnToAct) {
+                    handleNextRound();
+                }
+            },
         });
     }
   }, [state.turnState, state.roundEndReason, state.currentPlayerIndex, state.players, user, toast, handleNextRound]);
@@ -271,7 +277,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
   const isRoundOver = state.turnState === 'ROUND_OVER';
 
   const canPlayCard = isMyTurn && !isRoundOver && state.playedCardsThisTurn < 3 && (state.lastActionInTurn === 'NONE' || state.lastActionInTurn === 'FLIP');
-  const canFlipCard = isMyTurn && !isRoundOver && state.playedCardsThisTurn < 3 && state.lastActionInTurn !== 'FLIP';
+  const canFlipCard = isMyTurn && !isRoundOver && (state.lastActionInTurn === 'NONE' || state.lastActionInTurn === 'PLAY');
 
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col gap-4">
