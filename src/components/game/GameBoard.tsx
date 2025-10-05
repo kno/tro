@@ -1,13 +1,12 @@
-// src/components/game/GameBoard.tsx
+// src/app/game/GameBoard.tsx
 'use client';
-import { useReducer, useEffect, useState, useCallback, useMemo } from 'react';
+import { useReducer, useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { createGameReducer, getInitialGameState } from '@/lib/game-logic';
 import { PlayerHand } from './PlayerHand';
 import { OpponentHand } from './OpponentHand';
 import { CenterRow } from './CenterRow';
 import { ActionPanel } from './ActionPanel';
 import { EndGameDialog } from './EndGameDialog';
-import { RoundResultToast } from './RoundResultToast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useDoc, useFirestore, useUser, useMemoFirebase, errorEmitter, FirestorePermissionError } from '@/firebase';
 import { doc, serverTimestamp, deleteDoc, updateDoc } from 'firebase/firestore';
@@ -17,6 +16,9 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { useRouter } from 'next/navigation';
 import { isEqual } from 'lodash';
 import { Button } from '@/components/ui/button';
+import { useToast } from '@/hooks/use-toast';
+import { ToastAction } from '../ui/toast';
+import { Award, ShieldAlert } from 'lucide-react';
 
 function GameLoader() {
   return (
@@ -36,6 +38,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
   const { user } = useUser();
   const firestore = useFirestore();
   const router = useRouter();
+  const { toast, dismiss } = useToast();
   const [isCancelling, setIsCancelling] = useState(false);
 
   const matchRef = useMemoFirebase(() => {
@@ -51,6 +54,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
 
   // IMPORTANT: Initialize reducer with a valid state structure, even if it's a dummy one.
   const [state, dispatch] = useReducer(gameReducer, getInitialGameState([]));
+  const roundEndToastId = useRef<string | null>(null);
 
   // This effect syncs remote state from Firestore to the local reducer.
   useEffect(() => {
@@ -128,6 +132,10 @@ export function GameBoard({ matchId }: GameBoardProps) {
   const handlePlayCard = useCallback((handIndex: number, isBlind: boolean) => {
     dispatch({ type: 'PLAY_CARD', payload: { handIndex, isBlind } });
   }, [dispatch]);
+  
+  const handleFlipCard = useCallback((centerRowIndex: number) => {
+    dispatch({ type: 'FLIP_CARD', payload: { centerRowIndex }});
+  }, [dispatch]);
 
   const handleEndTurn = useCallback(() => {
     dispatch({ type: 'END_TURN' });
@@ -140,10 +148,78 @@ export function GameBoard({ matchId }: GameBoardProps) {
   const handleRestart = useCallback(() => {
     dispatch({ type: 'RESTART_GAME' });
   }, [dispatch]);
+  
+  useEffect(() => {
+    let timeoutId: NodeJS.Timeout | null = null;
+  
+    if (state.turnState === 'ROUND_OVER' && state.roundEndReason && user && !roundEndToastId.current) {
+        const { roundEndReason, players, currentPlayerIndex } = state;
+        
+        let winnerIndex: number;
+        let nextPlayerToActIndex: number;
+
+        if (roundEndReason === 'RAINBOW_COMPLETE') {
+            winnerIndex = currentPlayerIndex;
+            nextPlayerToActIndex = 1 - winnerIndex;
+        } else {
+            winnerIndex = 1 - currentPlayerIndex;
+            nextPlayerToActIndex = currentPlayerIndex;
+        }
+
+        const winner = players[winnerIndex];
+        const nextPlayerToAct = players[nextPlayerToActIndex];
+        const isMyTurnToAct = nextPlayerToAct.id === user.uid;
+
+        const title = roundEndReason === 'RAINBOW_COMPLETE' 
+            ? '¡Arcoíris Completado!' 
+            : '¡Ronda Perdida!';
+
+        const description = `${winner?.name || 'Un jugador'} gana las cartas de la fila. ${!isMyTurnToAct ? `Esperando a ${nextPlayerToAct?.name || 'oponente'}...` : ''}`;
+
+        const { id } = toast({
+            title: (
+                <div className="flex items-center gap-2">
+                    {roundEndReason === 'RAINBOW_COMPLETE' ? <Award /> : <ShieldAlert />}
+                    {title}
+                </div>
+            ),
+            description: description,
+            duration: 5000,
+            action: isMyTurnToAct ? (
+                <ToastAction altText="Siguiente Ronda" onClick={handleNextRound}>
+                    Siguiente Ronda
+                </ToastAction>
+            ) : undefined,
+        });
+        roundEndToastId.current = id;
+        
+        if (isMyTurnToAct) {
+            timeoutId = setTimeout(() => {
+                if (roundEndToastId.current === id) { // Only act if this toast is still the active one
+                    handleNextRound();
+                }
+            }, 5000);
+        }
+    }
+    
+    return () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      if (state.turnState !== 'ROUND_OVER' && roundEndToastId.current) {
+        dismiss(roundEndToastId.current);
+        roundEndToastId.current = null;
+      }
+    }
+  }, [state.turnState, state.roundEndReason, state.currentPlayerIndex, user, toast, handleNextRound, dismiss]);
+
 
   const currentUserId = user?.uid ?? null;
   const { self, opponent } = useMemo(() => {
-    const players = state?.players ?? [];
+    if (!state?.players || state.players.length < 2) {
+      return { self: undefined, opponent: undefined };
+    }
+    const players = state.players;
     return {
       self: currentUserId ? players.find(p => p.id === currentUserId) : undefined,
       opponent: currentUserId ? players.find(p => p.id !== currentUserId) : undefined,
@@ -217,20 +293,27 @@ export function GameBoard({ matchId }: GameBoardProps) {
   }
 
   const isMyTurn = state.players[state.currentPlayerIndex]?.id === self.id;
-  const canPlay = isMyTurn && state.turnState === 'PLAYING' && state.playedCardsThisTurn < 3;
   const isRoundOver = state.turnState === 'ROUND_OVER';
+
+  const canPlayCard = isMyTurn && !isRoundOver && state.playedCardsThisTurn < 3 && (state.lastActionInTurn === 'NONE' || state.lastActionInTurn === 'FLIP');
+  const canFlipCard = isMyTurn && !isRoundOver && state.playedCardsThisTurn < 3 && state.lastActionInTurn !== 'FLIP';
 
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col gap-4">
       <OpponentHand player={opponent} isCurrentPlayer={!isMyTurn} />
 
-      <CenterRow cards={state.centerRow} deckCount={state.deck.length} />
+      <CenterRow 
+        cards={state.centerRow} 
+        deckCount={state.deck.length}
+        onFlipCard={handleFlipCard}
+        canFlip={canFlipCard}
+      />
 
       <PlayerHand 
         player={self} 
         onPlayCard={handlePlayCard} 
         isCurrentPlayer={isMyTurn} 
-        canPlay={canPlay}
+        canPlay={canPlayCard}
       />
       
       <ActionPanel 
@@ -239,8 +322,6 @@ export function GameBoard({ matchId }: GameBoardProps) {
         isMyTurn={isMyTurn}
         player={self}
       />
-      
-      {isRoundOver && <RoundResultToast state={state} onNextRound={handleNextRound} currentUserId={user.uid} />}
       
       <EndGameDialog state={state} onRestart={handleRestart} />
     </div>

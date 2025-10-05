@@ -36,7 +36,7 @@ interface GameCardProps {
 export function GameCard({ card, view, isFaceUp = true, onClick, onPlayBlind, className, isPlayable = false }: GameCardProps) {
   const getVisibleColor = (): Color | null => {
     if (view === 'player') return card.frontColor;
-    if (view === 'opponent') return card.backColor; // This is a simplification; opponents can't *really* see the back
+    if (view === 'opponent') return card.backColor;
     if (view === 'center') return isFaceUp ? card.frontColor : card.backColor;
     if (view === 'discard') return card.frontColor;
     return null;
@@ -50,11 +50,12 @@ export function GameCard({ card, view, isFaceUp = true, onClick, onPlayBlind, cl
   }
   
   const handleCardClick = () => {
-    if(onClick) onClick();
+    if(isPlayable && onClick) onClick();
   }
 
   const cardContent = () => {
-    if (view === 'deck' || (view === 'center' && isFaceUp === false)) {
+    // Only show the generic "?" back for cards in the deck
+    if (view === 'deck') {
       return <CardBack />;
     }
     if (!visibleColor) return <CardBack />;
@@ -69,22 +70,23 @@ export function GameCard({ card, view, isFaceUp = true, onClick, onPlayBlind, cl
     );
   };
   
-  if (view === 'player' && isPlayable) {
+  if (isPlayable) {
      return (
         <div 
+            onClick={handleCardClick}
             className={cn(
-                "relative aspect-[2.5/3.5] rounded-lg shadow-lg transition-transform duration-300",
+                "relative aspect-[2.5/3.5] rounded-lg shadow-lg transition-transform duration-300 cursor-pointer",
                 "hover:scale-105 hover:-translate-y-2 ring-4 ring-transparent hover:ring-accent",
                 className
             )}
         >
-            <div onClick={handleCardClick} className="w-full h-full cursor-pointer">
+            <div className="w-full h-full">
               {cardContent()}
             </div>
-             {onPlayBlind && (
+             {view === 'player' && onPlayBlind && (
                 <button 
                     onClick={handleBlindPlayClick} 
-                    className="absolute top-1 right-1 z-10 p-1 rounded-full bg-black/30 hover:bg-black/50 transition-colors cursor-pointer"
+                    className="absolute top-1 right-1 z-10 p-1 rounded-full bg-black/30 hover:bg-black/50 transition-colors"
                     aria-label="Jugar a ciegas"
                 >
                     <EyeOff className="w-4 h-4 text-white" />
