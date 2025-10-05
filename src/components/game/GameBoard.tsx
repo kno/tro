@@ -1,6 +1,6 @@
 // src/app/game/GameBoard.tsx
 'use client';
-import { useReducer, useEffect, useState, useCallback, useMemo } from 'react';
+import { useReducer, useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { createGameReducer, getInitialGameState } from '@/lib/game-logic';
 import { PlayerHand } from './PlayerHand';
 import { OpponentHand } from './OpponentHand';
@@ -38,7 +38,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
   const { user } = useUser();
   const firestore = useFirestore();
   const router = useRouter();
-  const { toast } = useToast();
+  const { toast, dismiss } = useToast();
   const [isCancelling, setIsCancelling] = useState(false);
 
   const matchRef = useMemoFirebase(() => {
@@ -54,6 +54,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
 
   // IMPORTANT: Initialize reducer with a valid state structure, even if it's a dummy one.
   const [state, dispatch] = useReducer(gameReducer, getInitialGameState([]));
+  const roundEndToastId = useRef<string | null>(null);
 
   // This effect syncs remote state from Firestore to the local reducer.
   useEffect(() => {
@@ -173,7 +174,7 @@ export function GameBoard({ matchId }: GameBoardProps) {
 
         const description = `${winner.name} gana las cartas de la fila. ${!isMyTurnToAct ? `Esperando a ${nextPlayerToAct.name}...` : ''}`;
 
-        toast({
+        const { id } = toast({
             title: (
                 <div className="flex items-center gap-2">
                     {roundEndReason === 'RAINBOW_COMPLETE' ? <Award /> : <ShieldAlert />}
@@ -194,8 +195,17 @@ export function GameBoard({ matchId }: GameBoardProps) {
                 }
             },
         });
+        roundEndToastId.current = id;
     }
-  }, [state.turnState, state.roundEndReason, state.currentPlayerIndex, state.players, user, toast, handleNextRound]);
+    
+    // Cleanup function to dismiss the toast if the round is no longer over
+    return () => {
+        if (state.turnState !== 'ROUND_OVER' && roundEndToastId.current) {
+            dismiss(roundEndToastId.current);
+            roundEndToastId.current = null;
+        }
+    }
+  }, [state.turnState, state.roundEndReason, state.currentPlayerIndex, state.players, user, toast, handleNextRound, dismiss]);
 
 
   const currentUserId = user?.uid ?? null;
