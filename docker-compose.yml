@@ -1,0 +1,35 @@
+version: '3.9'
+
+services:
+  db:
+    image: mysql:8.3
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: teledescargas
+      MYSQL_USER: teledescargas
+      MYSQL_PASSWORD: teledescargas
+      MYSQL_ROOT_PASSWORD: rootpassword
+    ports:
+      - '3306:3306'
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  web:
+    build: .
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: mysql://teledescargas:teledescargas@db:3306/teledescargas
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: change-me
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      EMAIL_SERVER: ${EMAIL_SERVER}
+      EMAIL_FROM: ${EMAIL_FROM}
+      TELEGRAM_API_ID: ${TELEGRAM_API_ID}
+      TELEGRAM_API_HASH: ${TELEGRAM_API_HASH}
+    ports:
+      - '3000:3000'
+
+volumes:
+  mysql_data:
